@@ -95,7 +95,7 @@ def main():
     train_path = dataset_path / "abox" / "splits" / "train.nt"
     output_kg_path = dataset_path / "ont_train_graph.owl"
     reasoner_path = Path().absolute() / "reasoners"
-    inc_evaluator = InconsistentEvaluator(ontology_path, train_path, output_kg_path, reasoner_path, entity_to_id_path, relation_to_id_path, InconsistencyMetric.SEM_ATK_K, k=5, filtered=True)
+    inc_evaluator = InconsistentEvaluator(ontology_path, train_path, output_kg_path, reasoner_path, entity_to_id_path, relation_to_id_path, InconsistencyMetric.SEM_AT_K, k=5, filtered=True)
     inc_results = inc_evaluator.evaluate(
         model=result.model,
         mapped_triples=test_tf.mapped_triples,

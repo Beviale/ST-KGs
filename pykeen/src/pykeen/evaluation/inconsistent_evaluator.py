@@ -38,10 +38,8 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
     
     metric_result_cls = InconsistentMetricResults
 
-    def __init__(self, ontology_path:str, train_path:str, output_kg_path:str, reasoner_path:str, entity_to_id_path:str, relation_to_id_path:str, metric:InconsistencyMetric, class_to_id_path=None, k=5, **kwargs):
+    def __init__(self, ontology_path:str, train_path:str, output_kg_path:str, reasoner_path:str, entity_to_id_path:str, relation_to_id_path:str, metric:InconsistencyMetric, k=5, **kwargs):
         super().__init__(**kwargs)
-        if metric == InconsistencyMetric.SEM_AT_K and class_to_id_path is None:
-            raise ValueError("The class_to_id path cannot be null with the metric " + str(InconsistencyMetric.SEM_AT_K) + ".")
         self.ontology_path = ontology_path
         self.train_path = train_path
         self.output_kg_path = output_kg_path
