@@ -17,7 +17,6 @@ from pykeen.triples.leakage import unleak
 from pykeen.triples.splitting import CoverageSplitter
 from rdflib import OWL, RDF, Graph
 from rdflib.term import URIRef
-
 import jdex.utils.conventions.paths as pc
 from jdex.cli import CLI
 from jdex.config import JDEXConfig

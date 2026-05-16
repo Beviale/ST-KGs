@@ -1,0 +1,22 @@
+# cf. https://github.com/actions/first-interaction
+name: Welcome
+
+on:
+  pull_request:
+    types:
+      - opened
+    branches:
+      - master
+
+permissions:
+  pull-requests: write
+
+jobs:
+  welcome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/first-interaction@v2
+        with:
+          pr-message: |-
+            Congrats on making your first Pull Request and thanks for taking the time to improve PyKEEN! ❤️! 🎉
+  
