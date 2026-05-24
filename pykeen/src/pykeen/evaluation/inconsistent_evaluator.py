@@ -16,7 +16,8 @@ from rdflib import OWL, RDFS, RDF
 class InconsistencyMetric(Enum):
     INC_AT_K = "inc_at_k"
     SEM_AT_K = "sem_at_k"
-
+    AC_AT_K_1 = "ac_at_k_using_reasoner"
+    AC_AT_K_2 = "ac_at_k_using_domain_range_rel"
 
 
 
@@ -38,8 +39,10 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
     
     metric_result_cls = InconsistentMetricResults
 
-    def __init__(self, ontology_path:str, train_path:str, output_kg_path:str, reasoner_path:str, entity_to_id_path:str, relation_to_id_path:str, metric:InconsistencyMetric, k=5, **kwargs):
+    def __init__(self, ontology_path:str, train_path:str, output_kg_path:str, reasoner_path:str, entity_to_id_path:str, relation_to_id_path:str, metric:InconsistencyMetric, k=5, class_assertsions_json_path="", relation_json_path="", **kwargs):
         super().__init__(**kwargs)
+        self.class_assertions_json_path = class_assertsions_json_path
+        self.relation_json_path = relation_json_path
         self.ontology_path = ontology_path
         self.train_path = train_path
         self.output_kg_path = output_kg_path
@@ -103,17 +106,58 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
                         inconsistent_for_triple += 1
                 inc_percentage = inconsistent_for_triple / self.k
                 self.inconsistencies[target].append(inc_percentage)
+        elif self.metric == InconsistencyMetric.AC_AT_K_1:
+            for prediction in predictions:
+                consistency_sum = 0.0
+                consistent_count = 0
+                for i, triple in enumerate(prediction):
+                    if self._is_consistent(triple):
+                        consistent_count += 1
+                        consistency_sum += consistent_count / (i + 1)
+                ac_at_k = consistency_sum / self.k
+                self.consistencies[target].append(ac_at_k)
         elif self.metric == InconsistencyMetric.SEM_AT_K:
             g = rdflib.Graph().parse(str(self.ontology_path), format="xml")
             for prediction in predictions:
                 inconsistent_for_triple = 0
                 for triple in prediction:
-                    if self._is_consistent_relation(target, triple, g) == False:
+                    if self._is_consistent_relation_json(target, triple, g) == False:
                         inconsistent_for_triple += 1
                 inc_percentage = inconsistent_for_triple / self.k
                 self.inconsistencies[target].append(inc_percentage)
+        elif self.metric == InconsistencyMetric.AC_AT_K_2:
+            g = rdflib.Graph().parse(str(self.ontology_path), format="xml")
+            for prediction in predictions:
+                consistency_sum = 0.0
+                consistent_count = 0
+                for i, triple in enumerate(prediction):
+                    if self._is_consistent_relation_json(target, triple, g):
+                        consistent_count += 1
+                        consistency_sum += consistent_count / (i + 1)
+                ac_at_k = consistency_sum / self.k
+                self.consistencies[target].append(ac_at_k)
 
-    def _is_consistent_relation(self, target, triple, g):
+
+
+    def _is_consistent_relation_json(self, target, triple, g):
+        head = self.id_to_entity[triple[0].item()]
+        relation = self.id_to_relation[triple[1].item()]
+        relation_uri = rdflib.URIRef(relation)
+        tail = self.id_to_entity[triple[2].item()]
+        with open(self.class_assertions_json_path, "r", encoding="utf-8") as f:
+            class_assertions = json.load(f)
+        with open(self.relation_json_path, "r", encoding="utf-8") as f:
+            relation_assertions = json.load(f)
+        if target == "head":
+            all_types_head = set(class_assertions[head])
+            relation_domains = self._get_domains(relation, relation_assertions)
+            return bool(all_types_head.intersection(relation_domains))
+        elif target == "tail":
+            all_types_tail = set(class_assertions[tail])
+            relation_ranges = self._get_domains(relation, relation_assertions)
+            return bool(all_types_tail.intersection(relation_ranges))
+        
+    def _is_consistent_relation_owl(self, target, triple, g):
         head = self.id_to_entity[triple[0].item()]
         relation = self.id_to_relation[triple[1].item()]
         relation_uri = rdflib.URIRef(relation)
@@ -206,3 +250,23 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
             superclasses.add(superclass)
             superclasses |= self._get_all_superclasses(superclass, g)  # ricorsivo
         return superclasses
+    
+    def _get_domains(self, relation_uri: str, relation_assertions: dict) -> set:
+            domains = set()
+            for domain in relation_assertions.get(relation_uri, {}).get("domain", []):
+                if isinstance(domain, str):
+                    domains.add(domain)
+                elif isinstance(domain, dict):
+                    for cls in domain.get("http://www.w3.org/2002/07/owl#unionOf", []):
+                        domains.add(cls)
+            return domains
+
+    def _get_ranges(self, relation_uri: str, relation_assertions: dict) -> set:
+        ranges = set()
+        for range_ in relation_assertions.get(relation_uri, {}).get("range", []):
+            if isinstance(range_, str):
+                ranges.add(range_)
+            elif isinstance(range_, dict):
+                for cls in range_.get("http://www.w3.org/2002/07/owl#unionOf", []):
+                    ranges.add(cls)
+        return ranges
