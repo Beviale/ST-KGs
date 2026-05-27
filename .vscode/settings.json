@@ -1,5 +1,12 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:conda",
     "python-envs.defaultPackageManager": "ms-python.python:conda",
-    "python.defaultInterpreterPath": "C:\\Users\\bevia\\miniconda3\\envs\\st_kgs\\python.exe"
+    "python.defaultInterpreterPath": "C:\\Users\\bevia\\miniconda3\\envs\\st_kgs\\python.exe",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}"
+    ],
+    "python.autoComplete.extraPaths": [
+        "${workspaceFolder}"
+    ],
+    "python.analysis.useLibraryCodeForTypes": true 
 }

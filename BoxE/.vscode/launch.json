@@ -1,0 +1,30 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "debugAdapterPath": "C:\\Users\\bevia\\miniconda3\\envs\\boxe\\lib\\site-packages\\debugpy\\adapter",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "python": "C:\\Users\\bevia\\miniconda3\\envs\\boxe\\python.exe",
+            "args": [
+                "NELLRuleInjSplit90Mat",
+                "-epochs", "2000",
+                "-validCkpt", "200",
+                "-learningRate", "0.001",
+                "-nbNegExp", "100",
+                "-lossMargin", "6",
+                "-embDim", "200",
+                "-batchSize", "1024",
+                "-negSampling", "unif",
+                "-useTB", "F",
+                "-ruleDir", "RulesNELL.txt"
+            ]
+        }
+    ]
+}
