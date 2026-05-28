@@ -127,12 +127,21 @@ def train_TransE(dataset_path: str, entity_mapping, relation_mapping, experiment
                 optimizer="Adam",
                 optimizer_kwargs=dict(lr=params["lr"]),
                 model_kwargs=dict(embedding_dim=params["embedding_dim"]),
-                training_kwargs=100,
+                training_kwargs=dict(num_epochs=1000),
                 device="cuda",
-                evaluator=RankBasedEvaluator,  # Passi la classe
+                evaluator=RankBasedEvaluator,  
                 evaluator_kwargs=dict(
                     metrics=["mrr", HitsAtK(k=1), HitsAtK(k=3), HitsAtK(k=10)],
                     filtered=True,
+                    batch_size=4,
+                    slice_size=4,
+                ),
+                stopper="early",
+                stopper_kwargs=dict(
+                    frequency=5,      
+                    patience=3,        
+                    metric="mrr",     
+                    device="cpu",    
                 ),
             )
             current_metric = result.metric_results.get_metric("hits@10")
@@ -153,13 +162,13 @@ def train_TransE(dataset_path: str, entity_mapping, relation_mapping, experiment
     print(f"Best Hits@10: {best_metric:.4f}")
     print(f"Best hyparameter combination: {best_params}")
     print("=" * 40)
-    print(result.metric_results.to_flat_dict())
-    os.makedirs(output_directory, exist_ok=True)
-    metrics_file_path = os.path.join(output_directory, "best_metrics_TransE.json")
-    with open(metrics_file_path, "w", encoding="utf-8") as f:
-        json.dump(result.metric_results, f, indent=4, sort_keys=True)
 
     if best_pipeline_result is not None:
+        print(best_pipeline_result.metric_results.to_flat_dict())
+        os.makedirs(output_directory, exist_ok=True)
+        metrics_file_path = os.path.join(output_directory, "best_metrics_TransE.json")
+        with open(metrics_file_path, "w", encoding="utf-8") as f:
+            json.dump(best_pipeline_result.metric_results, f, indent=4, sort_keys=True)
         os.makedirs(os.path.join(output_directory, "Wights"), exist_ok=True)
         best_pipeline_result.save_to_directory(output_directory)
         print(f"\nBest model successfully saved in directory: '{output_directory}'")
@@ -346,7 +355,7 @@ def main():
     elif model_selected == "BoxE":
         train_BoxE(dataset_path, dataset_name)
 
-        
+
 
 
 def parse_nt(path: str) -> list[tuple[str, str, str]]:
