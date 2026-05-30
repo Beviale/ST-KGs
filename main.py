@@ -1,5 +1,4 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"  
 import sys
 from pathlib import Path
 sys.path.append(str(Path.cwd().parent))
@@ -25,6 +24,8 @@ from jdex.loaders.torch import KnowledgeGraph
 import shutil
 import subprocess
 import itertools
+import torch
+from datetime import datetime  
 
 def nt_to_tsv(input_path: str, output_path: str) -> None:
     """Convert a.nt file in a .tsv file."""
@@ -117,33 +118,29 @@ def train_TransE(dataset_path: str, entity_mapping, relation_mapping, experiment
     for i, params in enumerate(experiments):
         print(f"--- Experiment {i+1}/{len(experiments)} ---")
         print(f"Current hyparameter values: {params}")
+        print(torch.cuda.is_available())
 
         try:
             result = pipeline(
-                model="TransE",
                 training=train_tf,
                 validation=valid_tf,
                 testing=test_tf,
-                optimizer="Adam",
+                model='transe',
+                model_kwargs=dict(embedding_dim=params["embedding_dim"], scoring_fct_norm=1),
+                optimizer='Adam',
                 optimizer_kwargs=dict(lr=params["lr"]),
-                model_kwargs=dict(embedding_dim=params["embedding_dim"]),
-                training_kwargs=dict(num_epochs=1000),
-                device="cuda",
-                evaluator=RankBasedEvaluator,  
-                evaluator_kwargs=dict(
-                    metrics=["mrr", HitsAtK(k=1), HitsAtK(k=3), HitsAtK(k=10)],
-                    filtered=True,
-                    batch_size=4,
-                    slice_size=4,
-                ),
-                stopper="early",
-                stopper_kwargs=dict(
-                    frequency=5,      
-                    patience=3,        
-                    metric="mrr",     
-                    device="cpu",    
-                ),
-            )
+                loss='marginranking',
+                loss_kwargs=dict(margin=params["margin"]),
+                training_loop='slcwa',
+                device="cuda:0",
+                training_kwargs=dict(num_epochs=100, batch_size=128),
+                negative_sampler='basic',
+                negative_sampler_kwargs=dict(num_negs_per_pos=params["num_negs"]),
+                evaluator_kwargs=dict(filtered=True),
+                evaluation_kwargs=dict(batch_size=128),
+                stopper='early',
+                stopper_kwargs=dict(frequency=5, patience=2, relative_delta=0.002),
+                )
             current_metric = result.metric_results.get_metric("hits@10")
             print(f"Hits@10 obtained: {current_metric:.4f}")
 
@@ -236,7 +233,7 @@ def evaluate_inc_best_model_TransE(ontology_path: str, train_path:str, output_kg
             f.write(f"Ac@{k}_2: {inc_results.data}\n")
 
 
-def train_BoxE(dataset_path: str, dataset_name: str):
+def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir):
     dataset_dir = Path("Boxe") / "Datasets" / dataset_name
     dataset_dir_multi = Path("Boxe") / "DatasetsMulti" / dataset_name
     dataset_dir.mkdir(parents=True, exist_ok=True)
@@ -288,6 +285,99 @@ def train_BoxE(dataset_path: str, dataset_name: str):
         print(
         f"=== ERROR DURING PREPROCESSING (Exit Code: {result.returncode}) ==="
     )
+    path_Ente2ID_dict = dataset_dir_multi / "Ent2ID.dict"
+    path_Rel2ID_dict = dataset_dir_multi / "Rel2ID.dict"
+    path_new_Ente2Id_dict = dataset_path / pc.INDIVIDUAL_MAPPINGS
+    path_new_Rel2Id_dict = dataset_path / pc.OBJ_PROP_MAPPINGS
+    import msgpack
+    with open(path_new_Ente2Id_dict, 'r', encoding='utf-8') as f:
+        new_ente2Id_dict = json.load(f)
+    with open(path_new_Rel2Id_dict, 'r', encoding='utf-8') as f:
+        new_Rel2Id_dict = json.load(f)
+
+    with open(path_Ente2ID_dict, 'wb') as f:
+        msgpack.pack(new_ente2Id_dict, f)
+    with open(path_Rel2ID_dict, 'wb') as f:
+        msgpack.pack(new_Rel2Id_dict, f)
+
+    best_metric = -1.0  
+    best_result_path = None
+    best_params = None
+    print(f"Number of hypeparameter combinations to test: {len(experiments)}\n")
+    for i, params in enumerate(experiments):
+        print(f"--- Experiment {i+1}/{len(experiments)} ---")
+        print(f"Current hyparameter values: {params}")
+        param_str_log = f"neg{params['nbNegExp']}_margin{params['loss_margin']}_reg{params['reg_lambda']}_lr{params['learningRate']}"
+        dir_log_path = Path(output_dir) / f"BoxE_{param_str_log}"
+        os.makedirs(dir_log_path, exist_ok=True)
+        log_file_path = os.path.join(dir_log_path, "training_log.txt")
+        log_file_path_absolute = os.path.abspath(log_file_path)
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_file_path, "w", encoding="utf-8") as f:
+            f.write(f"Start training: {current_time}\n")
+        #command = f"conda activate boxe && cd Boxe && python training.py {dataset_name} -validation True -validCkpt 5 -logFName BoxE_NoRule_{dataset_name}_{str(params)} -epochs 10 -nbNegExp {params['nbNegExp']} -lossMargn {params['loss_margin']} -regLambda {params['reg_lambda']} -learningRate {params['learningRate']}"
+        command = (
+            f"conda activate boxe && "
+            f"cd BoxE && "
+            f"python Training.py {dataset_name} "
+            f"-validation True "
+            f"-validCkpt 5 "
+            f"-logFName \"{os.path.normpath(log_file_path_absolute)}\" "  
+            f"-epochs 2 "
+            f"-nbNegExp {params['nbNegExp']} "
+            f"-lossMargin {params['loss_margin']} "
+            f"-regLambda {params['reg_lambda']} "
+            f"-learningRate {params['learningRate']}"
+        )
+        if result.returncode == 0:
+            print("=== TRAINING COMPLETED SUCCESSFULLY ===")
+        else:
+            print(
+                f"=== ERROR DURING PREPROCESSING (Exit Code: {result.returncode}) ==="
+            )
+            continue
+        weights_path = Path("BoxE") / f"weights_{dataset_name}"
+        specific_weights_path = os.path.join(weights_path, param_str_log)
+        os.makedirs(specific_weights_path, exist_ok=True)
+        for item in weights_path.iterdir():
+            if item == specific_weights_path:
+                continue    
+            try:
+                shutil.move(str(item), str(specific_weights_path))
+            except Exception as e:
+                print(f"Error moving {item.name}: {e}")
+        timestamp_file_path = specific_weights_path / "weights_log.txt"
+        with open(timestamp_file_path, "w", encoding="utf-8") as f:
+            f.write(f"Weights saved on: {current_time}\n")
+
+        result = subprocess.run(
+            command,
+            shell=True, 
+            text=True,
+            capture_output=False, 
+        )
+        command = (
+            f"conda activate boxe && "
+            f"cd BoxE && "
+            f"python Testing.py {dataset_name} "
+            f"-verbosity False "
+            f"rank "
+            f"-testSetting filtered"
+        )
+        result = subprocess.run(
+            command,
+            shell=True, 
+            text=True,
+            capture_output=False, 
+        )  
+
+        
+        
+
+
+
+
+
     
 
 
@@ -336,24 +426,33 @@ def main():
         entity_mapping = json.load(f)
     with open(relation_to_id_path, "r") as f:
         relation_mapping = json.load(f)
-
-
-    grid_hyperparameters = {
-        "embedding_dim": [50, 100, 200],
-        "lr": [1e-2, 1e-3],
-    }
-    keys, values = zip(*grid_hyperparameters.items())
-    experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
     ontology_path = dataset_path / "ontology.owl"
     train_path = dataset_path / "abox" / "splits" / "train.nt"
     output_kg_path = dataset_path / "ont_train_graph.owl"
     reasoner_path = Path().absolute() / "reasoners"
 
     if model_selected == "TransE":
+        grid_hyperparameters = {
+            "embedding_dim": [50, 100],     
+            "lr":            [1e-3, 5e-4], 
+            "margin":        [1.0, 2.0],
+            "num_negs":      [32, 64],
+        }
+        keys, values = zip(*grid_hyperparameters.items())
+        experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
         best_model = train_TransE(dataset_path, entity_mapping, relation_mapping, experiments, output_directory)
         evaluate_inc_best_model_TransE(ontology_path, train_path, output_kg_path, reasoner_path, best_model, entity_to_id_path, relation_to_id_path, output_directory)
     elif model_selected == "BoxE":
-        train_BoxE(dataset_path, dataset_name)
+        grid_hyperparameters = {
+            "learningRate": [1e-3, 5e-4], 
+            "loss_margin": [3.0, 6.0, 9.0], 
+            "nbNegExp": [25, 50],  
+            "reg_lambda": [0.05, 0.01, 0.005]
+        }
+
+        keys, values = zip(*grid_hyperparameters.items())
+        experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
+        train_BoxE(dataset_path, dataset_name, experiments, output_directory)
 
 
 

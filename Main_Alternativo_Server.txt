@@ -1,0 +1,354 @@
+import os
+import sys
+from pathlib import Path
+sys.path.append(str(Path.cwd().parent))
+import numpy as np
+#import jdex.utils.conventions.paths as pc
+import json
+from pykeen.triples import TriplesFactory
+from rdflib import Graph
+import os
+from pykeen.pipeline import pipeline
+from pykeen.hpo import hpo_pipeline
+from pykeen.evaluation import RankBasedEvaluator
+#from pykeen.evaluation import InconsistentEvaluator
+#from pykeen.evaluation import InconsistencyMetric
+from pykeen.metrics.ranking import HitsAtK
+from pykeen.predict import predict_target
+import pandas as pd
+from tqdm import tqdm
+import pandas as pd
+from rdflib import Graph, URIRef
+import random
+#from jdex.loaders.torch import KnowledgeGraph
+import shutil
+import subprocess
+import itertools
+import torch
+
+def nt_to_tsv(input_path: str, output_path: str) -> None:
+    """Convert a.nt file in a .tsv file."""
+    with open(input_path, "r", encoding="utf-8") as nt_file, \
+         open(output_path, "w", encoding="utf-8") as tsv_file:
+                
+        for line in nt_file:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            
+            # rimuovi il punto finale
+            if line.endswith(" ."):
+                line = line[:-2].strip()
+            
+            # splitta in h, r, t
+            parts = line.split(" ", 2)
+            if len(parts) != 3:
+                continue
+            
+            head, relation, tail = parts
+            
+            # rimuovi < > dagli URI
+            head = head.strip("<>")
+            relation = relation.strip("<>")
+            tail = tail.strip("<>").strip('"')
+            
+            tsv_file.write(f"{head}\t{relation}\t{tail}\n")
+
+def create_tsv_files(dataset_path: str, force_tsv_creation: bool):
+    train_nt_path = dataset_path / "abox" / "splits" / "train.nt"
+    train_tsv_path = dataset_path / "abox" / "splits" / "train.tsv"
+    test_nt_path = dataset_path / "abox" / "splits" / "test.nt"
+    test_tsv_path = dataset_path / "abox" / "splits" / "test.tsv"
+    valid_nt_path = dataset_path / "abox" / "splits" / "valid.nt"
+    valid_tsv_path = dataset_path / "abox" / "splits" / "valid.tsv"
+
+    if not Path.exists(train_nt_path):
+        raise ValueError(f"The path '{train_nt_path}' does not exist!")
+    if not Path.exists(test_nt_path):
+        raise ValueError(f"The path '{test_nt_path}' does not exist!")
+    if not Path.exists(valid_nt_path):
+        raise ValueError(f"The path '{valid_nt_path}' does not exist!")
+
+    if force_tsv_creation:
+        nt_to_tsv(train_nt_path, train_tsv_path)
+        nt_to_tsv(test_nt_path, test_tsv_path)
+        nt_to_tsv(valid_nt_path, valid_tsv_path)
+    else:
+        if not Path.exists(train_tsv_path):
+            nt_to_tsv(train_nt_path, train_tsv_path)
+        if not Path.exists(test_tsv_path):
+            nt_to_tsv(test_nt_path, test_tsv_path)
+        if not Path.exists(valid_tsv_path):
+            nt_to_tsv(valid_nt_path, valid_tsv_path)
+
+def select_dataset(base_path: str) -> str:
+    datasets = [f for f in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, f))]
+    
+    print("Available dataset:")
+    for i, dataset in enumerate(datasets):
+        print(f"  {i+1}. {dataset}")
+    
+    choice = int(input("Select a dataset: ")) - 1
+    return Path(os.path.join(base_path, datasets[choice]))
+
+
+
+def train_TransE(dataset_path: str, entity_mapping, relation_mapping, experiments, output_directory):
+    train_tf = TriplesFactory.from_path(
+    dataset_path / "abox" / "splits" / "train.tsv",
+        entity_to_id=entity_mapping,
+        relation_to_id=relation_mapping,
+    )
+    valid_tf = TriplesFactory.from_path(
+        dataset_path / "abox" / "splits" / "valid.tsv",
+        entity_to_id=entity_mapping,
+        relation_to_id=relation_mapping,
+    )
+    test_tf = TriplesFactory.from_path(
+        dataset_path / "abox" / "splits" / "test.tsv",
+        entity_to_id=entity_mapping,
+        relation_to_id=relation_mapping,
+    )
+
+    best_metric = -1.0  
+    best_pipeline_result = None
+    best_params = None
+    print(f"Number of hypeparameter combinations to test: {len(experiments)}\n")
+    for i, params in enumerate(experiments):
+        print(f"--- Experiment {i+1}/{len(experiments)} ---")
+        print(f"Current hyparameter values: {params}")
+        print(torch.cuda.is_available())
+
+        try:
+            log_file_path = Path(output_directory) / f"TransE_dim{params['embedding_dim']}_margin{params['margin']}_numNegs{params['num_negs']}.txt"
+            result = pipeline(
+                training=train_tf,
+                validation=valid_tf,
+                testing=test_tf,
+                model='transe',
+                model_kwargs=dict(embedding_dim=params["embedding_dim"], scoring_fct_norm=1),
+                optimizer='Adam',
+                optimizer_kwargs=dict(lr=params["lr"]),
+                loss='marginranking',
+                loss_kwargs=dict(margin=params["margin"]),
+                training_loop='slcwa',
+                device="cuda:0",
+                training_kwargs=dict(batch_size=128),
+                negative_sampler='basic',
+                negative_sampler_kwargs=dict(num_negs_per_pos=params["num_negs"]),
+                evaluator_kwargs=dict(filtered=True),
+                evaluation_kwargs=dict(batch_size=128),
+                stopper='early',
+                stopper_kwargs=dict(frequency=5, patience=2, relative_delta=0.002),
+                result_tracker='csv',
+                result_tracker_kwargs=dict(
+                    path=str(log_file_path)
+                ),
+                )
+            current_metric = result.metric_results.get_metric("hits@10")
+            print(f"Hits@10 obtained: {current_metric:.4f}")
+
+            if current_metric > best_metric:
+                best_metric = current_metric
+                best_pipeline_result = result
+                best_params = params
+                print("New BEST found!")
+
+        except Exception as e:
+            print(f"Error while experimenting with parameters {params}: {e}")
+            continue
+
+    print("\n" + "=" * 40)
+    print("GRID SEARCH COMPLETED")
+    print(f"Best Hits@10: {best_metric:.4f}")
+    print(f"Best hyparameter combination: {best_params}")
+    print("=" * 40)
+
+    if best_pipeline_result is not None:
+        os.makedirs(output_directory, exist_ok=True)
+        best_dir = os.path.join(output_directory, "Best_TransE")
+        os.makedirs(best_dir, exist_ok=True)
+        best_pipeline_result.save_to_directory(best_dir)
+        print(f"\nBest model successfully saved in directory: '{output_directory}'")
+    return best_pipeline_result
+
+   
+
+
+def train_BoxE(dataset_path: str, dataset_name: str):
+    dataset_dir = Path("Boxe") / "Datasets" / dataset_name
+    dataset_dir_multi = Path("Boxe") / "DatasetsMulti" / dataset_name
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    dataset_dir_multi.mkdir(parents=True, exist_ok=True)
+    train_tsv_path = dataset_path / "abox" / "splits" / "train.tsv"
+    train_txt_path = dataset_dir / "train.txt"
+    train_txt_path_multi = dataset_dir_multi / "train.txt"
+    if train_tsv_path.exists():
+        shutil.copy2(train_tsv_path, train_txt_path)
+        print(f"File successfully overwritten at: {train_txt_path}")
+        shutil.copy2(train_tsv_path, train_txt_path_multi)
+        print(f"File successfully overwritten at: {train_txt_path_multi}")
+    else:
+        print(f"Error: The source file '{train_tsv_path}' was not found.")
+
+    valid_tsv_path = dataset_path / "abox" / "splits" / "valid.tsv"
+    valid_txt_path = dataset_dir / "valid.txt"
+    valid_txt_path_multi = dataset_dir_multi / "valid.txt"
+    if valid_tsv_path.exists():
+        shutil.copy2(valid_tsv_path, valid_txt_path)
+        print(f"File successfully overwritten at: {valid_txt_path}")
+        shutil.copy2(valid_tsv_path, valid_txt_path_multi)
+        print(f"File successfully overwritten at: {valid_txt_path_multi}")
+    else:
+        print(f"Error: The source file '{valid_tsv_path}' was not found.")
+
+    test_tsv_path = dataset_path / "abox" / "splits" / "test.tsv"
+    test_txt_path = dataset_dir / "test.txt"
+    test_txt_path_multi = dataset_dir_multi / "test.txt"
+    if test_tsv_path.exists():
+        shutil.copy2(test_tsv_path, test_txt_path)
+        print(f"File successfully overwritten at: {test_txt_path}")
+        shutil.copy2(test_tsv_path, test_txt_path_multi)
+        print(f"File successfully overwritten at: {test_txt_path_multi}")
+    else:
+        print(f"Error: The source file '{test_tsv_path}' was not found.")
+
+    #Pre-processing
+    command = f"conda activate boxe && cd Boxe && python KBUtils.py"
+    result = subprocess.run(
+        command,
+        shell=True, 
+        text=True,
+        capture_output=False, 
+    )
+    if result.returncode == 0:
+        print("=== PREPROCESSING COMPLETED SUCCESSFULLY ===")
+    else:
+        print(
+        f"=== ERROR DURING PREPROCESSING (Exit Code: {result.returncode}) ==="
+    )
+    ente2ID_dict = dataset_dir_multi / "Ent2ID.dict"
+    new_ente2Id_dict = dataset_path / "abox" / "splits" / "train.tsv",
+    import pickle
+    with open(ente2ID_dict, 'rb') as f:
+        data_vecchio = pickle.load(f)
+    print(data_vecchio)
+
+
+
+    
+    
+
+
+def main():
+    repeat = True
+    while(repeat):
+        model_selected = None
+        print("1. TransE")
+        print("2. BoxE")
+        model_selection = input("Select a model: ")
+        if model_selection == "1":
+            model_selected = "TransE"
+        elif model_selection == "2":
+             model_selected = "BoxE"
+        else:
+            print("Repeat the insertion")
+        if model_selected is None:
+            repeat = True
+        else: 
+            repeat = False
+
+    dataset_path = select_dataset("datasets")
+    dataset_name = os.path.basename(os.path.normpath(dataset_path))
+    output_directory = f"results_{model_selected}_{dataset_name}"
+    os.makedirs(output_directory, exist_ok=True)
+    print(f"Dataset selected: {dataset_name}")
+    create_tsv_files(dataset_path, True)
+
+    grid_hyperparameters = {
+        "embedding_dim": [50, 100],     
+        "lr":            [1e-3, 5e-4], 
+        "margin":        [1.0, 2.0],
+        "num_negs":      [32, 64],
+    }
+    keys, values = zip(*grid_hyperparameters.items())
+    experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
+    ontology_path = dataset_path / "ontology.owl"
+    train_path = dataset_path / "abox" / "splits" / "train.nt"
+    output_kg_path = dataset_path / "ont_train_graph.owl"
+    reasoner_path = Path().absolute() / "reasoners"
+    path_entity_mapping = dataset_path / "mappings" / "individual_to_id.json"
+    path_relation_mapping = dataset_path / "mappings" / "object_property_to_id.json"
+    with open(path_entity_mapping, "r") as f:
+        entity_mapping = json.load(f)
+    with open(path_relation_mapping, "r") as f:
+        relation_mapping = json.load(f)
+    if model_selected == "TransE":
+        best_model = train_TransE(dataset_path, entity_mapping, relation_mapping, experiments, output_directory)
+   
+
+
+
+
+def parse_nt(path: str) -> list[tuple[str, str, str]]:
+    """
+    Legge un file .nt e restituisce lista di triple (s, p, o).
+    Ignora commenti e righe vuote.
+    Ogni tripla è una riga: <s> <p> <o> .
+    """
+    triples = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # Rimuovi il punto finale e splitta
+            if line.endswith("."):
+                line = line[:-1].strip()
+            parts = line.split(None, 2)
+            if len(parts) == 3:
+                triples.append(tuple(parts))
+    return triples
+
+def write_nt(triples: list[tuple], path: str):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        for s, p, o in triples:
+            f.write(f"{s} {p} {o} .\n")
+
+def get_entities_and_relations(triples):
+    entities = set()
+    relations = set()
+    for s, p, o in triples:
+        entities.add(s)
+        entities.add(o)
+        relations.add(p)
+    return entities, relations
+
+def sample_graph(triples, ratio, seed):
+    rng = random.Random(seed)
+    k = max(1, int(len(triples) * ratio))
+    return rng.sample(triples, k)
+
+
+def execute_subprocess(script_path: str, working_dir: str):
+    try:
+        process = subprocess.run(
+        [sys.executable, str(script_path.resolve())],
+        cwd=working_dir,
+        check=True,          # Solleva eccezione se il codice di uscita != 0
+        capture_output=True, # Cattura output e errori
+        text=True            # Converte in stringhe
+    )
+        
+        print("Script finished successfully!")
+        print("Output:", process.stdout)
+        
+    except subprocess.CalledProcessError as e:
+        print(f"Error occurred while running the script in {working_dir}: {e}")
+        print(f"Error output: {e.stderr}")
+
+if __name__ == "__main__":
+    main()
+
+
