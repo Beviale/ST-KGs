@@ -117,21 +117,19 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
                 ac_at_k = consistency_sum / self.k
                 self.consistencies[target].append(ac_at_k)
         elif self.metric == InconsistencyMetric.SEM_AT_K:
-            g = rdflib.Graph().parse(str(self.ontology_path), format="xml")
             for prediction in predictions:
                 inconsistent_for_triple = 0
                 for triple in prediction:
-                    if self._is_consistent_relation(target, triple, g) == False:
+                    if self._is_consistent_relation(target, triple) == False:
                         inconsistent_for_triple += 1
                 inc_percentage = inconsistent_for_triple / self.k
                 self.inconsistencies[target].append(inc_percentage)
         elif self.metric == InconsistencyMetric.AC_AT_K_2:
-            g = rdflib.Graph().parse(str(self.ontology_path), format="xml")
             for prediction in predictions:
                 consistency_sum = 0.0
                 consistent_count = 0
                 for i, triple in enumerate(prediction):
-                    if self._is_consistent_relation(target, triple, g):
+                    if self._is_consistent_relation(target, triple):
                         consistent_count += 1
                         consistency_sum += consistent_count / (i + 1)
                 ac_at_k = consistency_sum / self.k
@@ -140,16 +138,24 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
 
 
     def _is_consistent_relation(self, target, triple):
-        head = self.kg.individual_to_id(triple[0].item())
-        relation = self.kg.obj_prop_to_id(triple[1].item())
-        tail = self.kg.individual_to_id(triple[2].item())
+        head = triple[0]
+        relation = triple[1].item()
+        tail = triple[2].item()
         if target == "head":
-            all_types_head = self.kg.individual_classes(head).toList()
-            relation_domains = self.kg.obj_prop_domain(relation).toList()
+            all_types_head = set(self.kg.individual_classes(head).tolist())
+            relation_domains = set(self.kg.obj_prop_domain(relation).tolist())
+            if not all_types_head:
+                raise Exception(f"The head entity {head} does not have any class!")
+            if not relation_domains:
+                raise Exception(f"The relation {relation} does not have any domain!")
             return bool(all_types_head.intersection(relation_domains))
         elif target == "tail":
-            all_types_tail = self.kg.individual_classes(tail).toList()
-            relation_ranges = self.kg.obj_prop_range(relation).toList()
+            all_types_tail = set(self.kg.individual_classes(tail).tolist())
+            relation_ranges = set(self.kg.obj_prop_range(relation).tolist())
+            if not all_types_tail:
+                raise Exception(f"The tail entity {tail} does not have any class!")
+            if not relation_ranges:
+                raise Exception(f"The relation {relation} does not have any range!")
             return bool(all_types_tail.intersection(relation_ranges))
 
 

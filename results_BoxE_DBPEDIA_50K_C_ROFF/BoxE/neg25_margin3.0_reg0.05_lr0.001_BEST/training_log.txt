@@ -1,0 +1,37 @@
+BoxEMulti: 
+Training for DBPEDIA_50K_C_ROFF:
+Embedding Dimension: 64
+Checkpoint Frequency: 5
+Number of Epochs: 2
+Learning Rate: 0.001
+LR Decay: 0/Period: 100
+Loss Margin: 3.0
+Shared Shape: False
+Learnable Shape: True
+Fixed Width: False
+Stop Negated: False
+Stop Gradients: NN
+Negative Sampling: SELF-ADV
+Bumps: True
+Reg Lambda: 0.05
+Reg Points: 0
+Bounded Pt: True
+Bounded Box: True
+Bound Scale: 1.0
+Hard Size: NO
+Hard Code Size: False
+Objective Function: negative sampling loss
+Loss Function: poly
+Loss Order: 2
+Dim_Dropout Probability: 0.0
+Gradient Clip: -1.0
+Bounded Norm: True
+Data Augmentation: False
+Normalized Bumps: False
+Epoch 1
+0:00:00) Loss @Batch 0:2612.8147, +:92.456566,-:2514.4536
+Epoch 1 Complete. Average Epoch Loss: 2433.82421875
+Epoch 2
+Epoch 2 Complete. Average Epoch Loss: 2205.448045813519
+Weights saved to weights_DBPEDIA_50K_C_ROFF/values.ckpt
+Start training: 2026-05-30 18:10:23
