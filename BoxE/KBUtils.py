@@ -93,11 +93,13 @@ def compute_kb_id_mapping_adapter(kb_directory=Cnst.DEFAULT_KB_DIR, kb_multi_dir
     rel_id_dict = {relation: index for index, relation in enumerate(relations_distinct)}
     
     ent_id_dict[ENTITY_PADDING] = len(ent_id_dict) - 1  
-    
-    with open(path_to_e2id, 'wb') as f:
-        msgpack.pack(ent_id_dict, f)
-    with open(path_to_r2id, 'wb') as f:
-        msgpack.pack(rel_id_dict, f)
+
+    if not os.path.exists(path_to_e2id):
+        with open(path_to_e2id, 'wb') as f:
+            msgpack.pack(ent_id_dict, f)
+    if not os.path.exists(path_to_r2id):
+        with open(path_to_r2id, 'wb') as f:
+            msgpack.pack(rel_id_dict, f)
 
 
 def compute_kb_id_mapping(kb_directory=Cnst.DEFAULT_KB_MULTI_DIR, max_arity=6, file_to_read="train.txt",
@@ -126,10 +128,12 @@ def compute_kb_id_mapping(kb_directory=Cnst.DEFAULT_KB_MULTI_DIR, max_arity=6, f
     
     ent_id_dict[ENTITY_PADDING] = len(ent_id_dict) - 1  
     
-    with open(path_to_e2id, 'wb') as f:
-        msgpack.pack(ent_id_dict, f)
-    with open(path_to_r2id, 'wb') as f:
-        msgpack.pack(rel_id_dict, f)
+    if not os.path.exists(path_to_e2id):
+        with open(path_to_e2id, 'wb') as f:
+            msgpack.pack(ent_id_dict, f)
+    if not os.path.exists(path_to_r2id):
+        with open(path_to_r2id, 'wb') as f:
+            msgpack.pack(rel_id_dict, f)
 
 
 def load_kb_file(kb_file_path):

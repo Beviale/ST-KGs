@@ -29,9 +29,9 @@ Bounded Norm: True
 Data Augmentation: False
 Normalized Bumps: False
 Epoch 1
-0:00:00) Loss @Batch 0:2612.8147, +:92.456566,-:2514.4536
-Epoch 1 Complete. Average Epoch Loss: 2433.82421875
+0:00:00) Loss @Batch 0:2601.2432, +:93.84474,-:2501.6714
+Epoch 1 Complete. Average Epoch Loss: 2389.2799072265625
 Epoch 2
-Epoch 2 Complete. Average Epoch Loss: 2205.448045813519
+Epoch 2 Complete. Average Epoch Loss: 2291.8209296332466
 Weights saved to weights_DBPEDIA_50K_C_ROFF/values.ckpt
-Start training: 2026-05-30 18:10:23
+Start training: 2026-05-31 17:35:44

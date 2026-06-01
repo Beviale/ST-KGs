@@ -106,7 +106,7 @@ def train_TransE(dataset_path: str, entity_mapping, relation_mapping, experiment
 
 
 
-def evaluate_inc_best_model_TransE(ontology_path: str, train_path:str, output_kg_path: str, reasoner_path: str,  best_model_path: str, dataset_path: str, entity_to_id_path, relation_to_id_path, output_directory, kg, metric_selection: InconsistencyMetric):
+def evaluate_inc_best_model_TransE(ontology_path: str, train_path:str, output_kg_path: str, reasoner_path: str,  best_model_path: str, dataset_path: str, entity_to_id_path, relation_to_id_path, output_directory, kg, metrics: list[InconsistencyMetric]):
     print("---- Evaluating using inconsistency metrics ----")
     transE_outputDir = Path(output_directory) / "TransE"
     os.makedirs(transE_outputDir, exist_ok=True)
@@ -132,15 +132,17 @@ def evaluate_inc_best_model_TransE(ontology_path: str, train_path:str, output_kg
         entity_to_id=entity_mapping,
         relation_to_id=relation_mapping,
     )
-    for k in [1, 3, 10]:
-        inc_evaluator = InconsistentEvaluator(ontology_path, train_path, output_kg_path, reasoner_path, entity_to_id_path, relation_to_id_path, metric_selection, kg, k, filtered=True)
-        inc_results = inc_evaluator.evaluate(
-            model=best_model,
-            mapped_triples=test_tf.mapped_triples,
-            additional_filter_triples=[train_tf.mapped_triples, valid_tf.mapped_triples],
-        )
-        print(f"{metric_selection.name}_{k}: {str(inc_results.data)}")
-        with open(metrics_file_path, "w", encoding="utf-8") as f:
-            f.write(f"{metric_selection.name}_{k}: {inc_results.data}\n")
+    for metric in metrics:
+        print(f"------Metric={metric}------------------")
+        for k in [1, 3, 10]:
+            print(f"------K={k}------------------")
+            inc_evaluator = InconsistentEvaluator(ontology_path, train_path, output_kg_path, reasoner_path, entity_to_id_path, relation_to_id_path, metric, kg, k, filtered=True)
+            inc_results = inc_evaluator.evaluate(
+                model=best_model,
+                mapped_triples=test_tf.mapped_triples,
+                additional_filter_triples=[train_tf.mapped_triples, valid_tf.mapped_triples],
+            )
+            print(f"{metric.name}_{k}: {str(inc_results.data)}")
+            with open(metrics_file_path, "a", encoding="utf-8") as f:
+                f.write(f"{metric.name}_{k}: {str(inc_results.data)}\n")
 
-        print(f"------END K={k}------------------")

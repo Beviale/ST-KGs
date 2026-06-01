@@ -121,7 +121,7 @@ class KnowledgeGraph(Dataset):
         Returns:
             int: Integer ID assigned to the individual.
         """
-        return self._individual_to_id[individual_uri]
+        return self._individual_to_id.get(individual_uri, -1)
 
     def class_to_id(self, class_uri: str) -> int:
         """
@@ -145,7 +145,7 @@ class KnowledgeGraph(Dataset):
         Returns:
             int: Integer ID assigned to the object property.
         """
-        return self._obj_prop_to_id[obj_prop_uri]
+        return self._obj_prop_to_id.get(obj_prop_uri, -1)
 
     def id_to_individual(self, individual_id: int) -> str:
         """

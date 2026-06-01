@@ -11,6 +11,7 @@ import train_and_evaluate_BoxE
 import train_and_evaluate_TransE
 import shutil
 from pykeen.evaluation import InconsistencyMetric
+import random
 
 
 def nt_to_tsv(input_path: str, output_path: str) -> None:
@@ -46,10 +47,6 @@ def create_tsv_files(dataset_path: str, force_tsv_creation: bool):
     train_tsv_path = dataset_path / "abox" / "splits" / "train.tsv"
     test_nt_path = dataset_path / "abox" / "splits" / "test.nt"
     test_tsv_path = dataset_path / "abox" / "splits" / "test.tsv"
-    test_complete_nt_path = dataset_path / "abox" / "splits" / "test_complete.nt"
-    test_complete_tsv_path = dataset_path / "abox" / "splits" / "test_complete.tsv"
-    test_sem_nt_path = dataset_path / "abox" / "splits" / "test_sem_at_k.nt"
-    test_sem_tsv_path = dataset_path / "abox" / "splits" / "test_sem_at_k.tsv"
     valid_nt_path = dataset_path / "abox" / "splits" / "valid.nt"
     valid_tsv_path = dataset_path / "abox" / "splits" / "valid.tsv"
 
@@ -63,20 +60,12 @@ def create_tsv_files(dataset_path: str, force_tsv_creation: bool):
     if force_tsv_creation:
         nt_to_tsv(train_nt_path, train_tsv_path)
         nt_to_tsv(test_nt_path, test_tsv_path)
-        if os.path.exists(test_sem_nt_path):
-            nt_to_tsv(test_sem_nt_path, test_sem_tsv_path)
-        if os.path.exists(test_complete_nt_path):
-            nt_to_tsv(test_complete_nt_path, test_complete_tsv_path)
         nt_to_tsv(valid_nt_path, valid_tsv_path)
     else:
         if not Path.exists(train_tsv_path):
             nt_to_tsv(train_nt_path, train_tsv_path)
         if not Path.exists(test_tsv_path):
             nt_to_tsv(test_nt_path, test_tsv_path)
-        if not Path.exists(test_sem_tsv_path) and os.path.exists(test_sem_nt_path):
-            nt_to_tsv(test_sem_nt_path, test_sem_tsv_path)
-        if not Path.exists(test_complete_tsv_path) and os.path.exists(test_complete_nt_path):
-            nt_to_tsv(test_complete_nt_path, test_complete_tsv_path)
         if not Path.exists(valid_tsv_path):
             nt_to_tsv(valid_nt_path, valid_tsv_path)
 
@@ -90,12 +79,24 @@ def select_dataset(base_path: str) -> str:
     choice = int(input("Select a dataset: ")) - 1
     return Path(os.path.join(base_path, datasets[choice]))
 
-
+def is_valid_triple(line, train_entities, train_relations):
+    parts = line.split()
+    head = parts[0].replace("<", "").replace(">", "")
+    relation = parts[1].replace("<", "").replace(">", "")
+    tail = parts[2].replace("<", "").replace(">", "")
+    return head in train_entities and tail in train_entities and relation in train_relations
 
 def prepare_for_sem_at_k(dataset_path, kg):
     test_path_complete = Path(dataset_path) / "abox" / "splits" / "test_complete.nt"
-    test_path_sem = Path(dataset_path) / "abox" / "splits" / "test_sem_at_k.nt"
-    with open(test_path_complete, "r") as f_in, open(test_path_sem, "w") as f_out:
+    train_path_complete = Path(dataset_path) / "abox" / "splits" / "train_complete.nt"
+    valid_path_complete = Path(dataset_path) / "abox" / "splits" / "valid_complete.nt"
+
+    test_path_sem = Path(dataset_path) / "abox" / "splits" / "sem_at_k.nt"
+    train_path_sem = Path(dataset_path) / "abox" / "splits" / "train_sem_at_k.nt"
+    valid_path_sem = Path(dataset_path) / "abox" / "splits" / "valid_sem_at_k.nt"
+
+    sem_triples = []
+    with open(test_path_complete, "r") as f_in:
         for line in f_in:
             line = line.strip()
             if not line or line.startswith("#"):
@@ -110,7 +111,80 @@ def prepare_for_sem_at_k(dataset_path, kg):
                 continue
             if not set(kg.obj_prop_range(kg.obj_prop_to_id(relation)).tolist()):
                 continue
-            f_out.write(line + "\n")
+            sem_triples.append(line)
+
+    with open(train_path_complete, "r") as f_in:
+        for line in f_in:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            head, relation, tail = parts[0].replace("<", "").replace(">", ""), parts[1].replace("<", "").replace(">", ""), parts[2].replace("<", "").replace(">", "")
+            if not set(kg.individual_classes(kg.individual_to_id(head)).tolist()):
+                continue
+            if not set(kg.individual_classes(kg.individual_to_id(tail)).tolist()):
+                continue
+            if not set(kg.obj_prop_domain(kg.obj_prop_to_id(relation)).tolist()):
+                continue
+            if not set(kg.obj_prop_range(kg.obj_prop_to_id(relation)).tolist()):
+                continue
+            sem_triples.append(line)
+
+    with open(valid_path_complete, "r") as f_in:
+        for line in f_in:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            head, relation, tail = parts[0].replace("<", "").replace(">", ""), parts[1].replace("<", "").replace(">", ""), parts[2].replace("<", "").replace(">", "")
+            if not set(kg.individual_classes(kg.individual_to_id(head)).tolist()):
+                continue
+            if not set(kg.individual_classes(kg.individual_to_id(tail)).tolist()):
+                continue
+            if not set(kg.obj_prop_domain(kg.obj_prop_to_id(relation)).tolist()):
+                continue
+            if not set(kg.obj_prop_range(kg.obj_prop_to_id(relation)).tolist()):
+                continue
+            sem_triples.append(line)
+
+
+    random.seed(42)
+    random.shuffle(sem_triples)
+
+    n = len(sem_triples)
+    train_end = int(n * 0.8)
+    valid_end = int(n * 0.9)
+
+    train_triples = sem_triples[:train_end]
+    valid_triples = sem_triples[valid_end:]
+    test_triples = sem_triples[train_end:valid_end]
+
+    train_entities = set()
+    train_relations = set()
+    for line in train_triples:
+        parts = line.split()
+        head = parts[0].replace("<", "").replace(">", "")
+        relation = parts[1].replace("<", "").replace(">", "")
+        tail = parts[2].replace("<", "").replace(">", "")
+        train_entities.add(head)
+        train_entities.add(tail)
+        train_relations.add(relation)
+
+    # filtra valid e test
+    valid_triples = [t for t in valid_triples if is_valid_triple(t, train_entities, train_relations)]
+    test_triples = [t for t in test_triples if is_valid_triple(t, train_entities, train_relations)]
+
+    # salva
+    with open(train_path_sem, "w") as f:
+        f.write("\n".join(train_triples))
+    with open(valid_path_sem, "w") as f:
+        f.write("\n".join(valid_triples))
+    with open(test_path_sem, "w") as f:
+        f.write("\n".join(test_triples))
+
+    print(f"(For Sem@K) Train: {len(train_triples)}, Valid: {len(valid_triples)}, Test: {len(test_triples)}")
+
+    
 
 
 def main():
@@ -131,48 +205,73 @@ def main():
         else: 
             repeat = False
     dataset_path = select_dataset("datasets")
+    dataset_name = os.path.basename(os.path.normpath(dataset_path))
+    output_directory = f"results_{model_selected}_{dataset_name}"
+    os.makedirs(output_directory, exist_ok=True)
+    print(f"Dataset selected: {dataset_name}")
+    # Test
     path_complete = Path(dataset_path) / "abox" / "splits" / "test_complete.nt"
     path_test = Path(dataset_path) / "abox" / "splits" / "test.nt"
     if not os.path.exists(path_complete):
         shutil.copy(path_test, path_complete)
     else:
         shutil.copy(path_complete, path_test)
+    # Train
+    path_complete = Path(dataset_path) / "abox" / "splits" / "train_complete.nt"
+    path_test = Path(dataset_path) / "abox" / "splits" / "train.nt"
+    if not os.path.exists(path_complete):
+        shutil.copy(path_test, path_complete)
+    else:
+        shutil.copy(path_complete, path_test)
+    # Val
+    path_complete = Path(dataset_path) / "abox" / "splits" / "valid_complete.nt"
+    path_test = Path(dataset_path) / "abox" / "splits" / "valid.nt"
+    if not os.path.exists(path_complete):
+        shutil.copy(path_test, path_complete)
+    else:
+        shutil.copy(path_complete, path_test)
 
     create_tsv_files(dataset_path, True)
+    save_complete_mappings(dataset_path)
     kg = KnowledgeGraph(
         path=dataset_path
     )
     prepare_for_sem_at_k(dataset_path, kg)
-    create_tsv_files(dataset_path, True)
-    dataset_name = os.path.basename(os.path.normpath(dataset_path))
-    output_directory = f"results_{model_selected}_{dataset_name}"
-    os.makedirs(output_directory, exist_ok=True)
-    print(f"Dataset selected: {dataset_name}")
-    create_tsv_files(dataset_path, True)
-    test_sem = False
+    sem = False
     repeat = True
     while(repeat):
         choice = input("Do you want to use the test set with untyped entities and relations filtered out? (yes/no): ")
         if choice.lower() == "no":
-            test_sem = False
+            sem = False
             repeat=False
-            source = Path(dataset_path) / "abox" / "splits" / "test_complete.nt"
-            destination = Path(dataset_path) / "abox" / "splits" / "test.nt"
-            shutil.copy(source, destination)
-            source = Path(dataset_path) / "abox" / "splits" / "test_complete.tsv"
-            destination = Path(dataset_path) / "abox" / "splits" / "test.tsv"
-            shutil.copy(source, destination)
         elif choice.lower() == "yes":
-            test_sem = True
+            sem = True
             repeat=False
-            source = Path(dataset_path) / "abox" / "splits" / "test_sem_at_k.nt"
+            source = Path(dataset_path) / "abox" / "splits" / "sem_at_k.nt"
             destination = Path(dataset_path) / "abox" / "splits" / "test.nt"
             shutil.copy(source, destination)
-            source = Path(dataset_path) / "abox" / "splits" / "test_sem_at_k.tsv"
-            destination = Path(dataset_path) / "abox" / "splits" / "test.tsv"
+            source = Path(dataset_path) / "abox" / "splits" / "train_sem_at_k.nt"
+            destination = Path(dataset_path) / "abox" / "splits" / "train.nt"
             shutil.copy(source, destination)
+            source = Path(dataset_path) / "abox" / "splits" / "valid_sem_at_k.nt"
+            destination = Path(dataset_path) / "abox" / "splits" / "valid.nt"
+            shutil.copy(source, destination)
+
+            rebuild_mappings(dataset_path)
+            mappings_dir_path = Path(dataset_path) / "mappings"
+            mappings = ["individual_to_id", "class_to_id", "object_property_to_id"]
+            for mapping in mappings:
+                source = mappings_dir_path / f"{mapping}_sem.json"
+                destination = mappings_dir_path / f"{mapping}.json"
+                if source.exists():
+                    shutil.copy(source, destination)
+                    print(f"Copied {source.name} → {destination.name}")
+                else:
+                    print(f"Warning: {source.name} not found, skipping...")
         else:
             print("Incorrect choice!")
+
+    create_tsv_files(dataset_path, True)
     kg = KnowledgeGraph(
         path=dataset_path
     )
@@ -188,7 +287,8 @@ def main():
     print(f"{'Object property ranges':<35} | {kg.obj_props_range.shape}")
     print("\n")
 
-    if test_sem:
+    metrics = [InconsistencyMetric]
+    if sem:
         repeat = True
         while(repeat):
             metric_selected = None
@@ -197,6 +297,7 @@ def main():
             print("2. Sem@k")
             print("3. AC@K (Inc@k)")
             print("4. AC@K (Sem@k)")
+
 
             metric_selected = input("Select a metric: ")
             if metric_selected == "1":
@@ -208,11 +309,16 @@ def main():
             elif metric_selected == "4":
                 metric_selection = InconsistencyMetric.AC_AT_K_2
             else:
-                print("Repeat the insertion")
+                print("ERROR! Repeat the insertion!")
             if metric_selection is None:
                 repeat = True
             else: 
-                repeat = False
+                metrics.append(metric_selection)
+                another = choice("Do you want to choose another metric? (yes/no): ")
+                if another.lower() == "yes":
+                    repeat = True
+                else:
+                    repeat = False
     else:
         repeat = True
         while(repeat):
@@ -220,6 +326,7 @@ def main():
             metric_selection = None
             print("1. Inc@K")
             print("2. AC@K (Inc@k)")
+            print("3. Repeat")
 
             metric_selected = input("Select a metric: ")
             if metric_selected == "1":
@@ -227,15 +334,20 @@ def main():
             elif metric_selected == "2":
                 metric_selection = InconsistencyMetric.AC_AT_K_1
             else:
-                print("Repeat the insertion")
+                print("ERROR! Repeat the insertion!")
             if metric_selection is None:
                 repeat = True
             else: 
-                repeat = False
+                metrics.append(metric_selection)
+                another = choice("Do you want to choose another metric? (yes/no): ")
+                if another.lower() == "yes":
+                    repeat = True
+                else:
+                    repeat = False
 
-    
-    entity_to_id_path = dataset_path / pc.INDIVIDUAL_MAPPINGS
-    relation_to_id_path = dataset_path / pc.OBJ_PROP_MAPPINGS
+   
+    entity_to_id_path = Path(dataset_path) / pc.INDIVIDUAL_MAPPINGS
+    relation_to_id_path = Path(dataset_path) / pc.OBJ_PROP_MAPPINGS
     with open(entity_to_id_path, "r") as f:
         entity_mapping = json.load(f)
     with open(relation_to_id_path, "r") as f:
@@ -254,7 +366,7 @@ def main():
         keys, values = zip(*grid_hyperparameters.items())
         experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
         best_model_path = train_and_evaluate_TransE.train_TransE(dataset_path, entity_mapping, relation_mapping, experiments, output_directory)
-        train_and_evaluate_TransE.evaluate_inc_best_model_TransE(ontology_path, train_path, output_kg_path, reasoner_path, best_model_path, dataset_path, entity_to_id_path, relation_to_id_path, output_directory, kg, metric_selection)
+        train_and_evaluate_TransE.evaluate_inc_best_model_TransE(ontology_path, train_path, output_kg_path, reasoner_path, best_model_path, dataset_path, entity_to_id_path, relation_to_id_path, output_directory, kg, metrics)
     elif model_selected == "BoxE":
         #grid_hyperparameters = {
             #"learningRate": [1e-3, 5e-4], 
@@ -274,10 +386,69 @@ def main():
         output_dir_scoring = Path(output_directory) / "temp_scoring"
         #best_weights_dir_path, best_params = train_and_evaluate_BoxE.train_BoxE(dataset_path, dataset_name, experiments, output_directory)
         best_weights_dir_path = Path("BoxE") / f"weights_{dataset_name}" 
-        train_and_evaluate_BoxE.evaluate_inc_best_model_BoxE(ontology_path, train_path, output_kg_path, reasoner_path, best_weights_dir_path, dataset_name, output_dir_scoring, 64, entity_to_id_path, relation_to_id_path, kg, metric_selection)
+        train_and_evaluate_BoxE.evaluate_inc_best_model_BoxE(ontology_path, train_path, output_kg_path, reasoner_path, best_weights_dir_path, dataset_name, output_dir_scoring, 64, entity_to_id_path, relation_to_id_path, kg, metrics)
 
 
+def save_complete_mappings(dataset_path):
+    mappings_dir_path = Path(dataset_path) / "mappings"
+    
+    files = [
+        "individual_to_id",
+        "object_property_to_id"
+    ]
+    
+    for file in files:
+        complete_path = mappings_dir_path / f"{file}_complete.json"
+        original_path = mappings_dir_path / f"{file}.json"
+        
+        if not complete_path.exists():
+            if not original_path.exists():
+                print(f"Warning: {original_path} not found, skipping...")
+                continue
+            with open(original_path, "r") as f:
+                data = json.load(f)
+            with open(complete_path, "w") as f:
+                json.dump(data, f, indent=4)
+        else:
+            shutil.copy(complete_path, original_path)
 
+
+def rebuild_mappings(dataset_path):
+    mappings_dir_path = Path(dataset_path) / "mappings"
+    train_path = Path(dataset_path) / "abox" / "splits" / "train.nt"
+    test_path = Path(dataset_path) / "abox" / "splits" / "test.nt"
+    valid_path = Path(dataset_path) / "abox" / "splits" / "valid.nt"
+
+    all_entities = set()
+    all_relations = set()
+
+    for split_path in [train_path, valid_path, test_path]:
+        with open(split_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                head = parts[0].replace("<", "").replace(">", "")
+                relation = parts[1].replace("<", "").replace(">", "")
+                tail = parts[2].replace("<", "").replace(">", "")
+                all_entities.add(head)
+                all_entities.add(tail)
+                all_relations.add(relation)
+
+    ent2id = {ent: idx for idx, ent in enumerate(sorted(all_entities))}
+    rel2id = {rel: idx for idx, rel in enumerate(sorted(all_relations))}
+
+    print(f"Number of Entities: {len(ent2id)}, Number of Relations: {len(rel2id)}")
+
+    with open(mappings_dir_path / "individual_to_id_sem.json", "w") as f:
+        json.dump(ent2id, f, indent=4)
+    with open(mappings_dir_path / "object_property_to_id_sem.json", "w") as f:
+        json.dump(rel2id, f, indent=4)
+
+    return ent2id, rel2id
+
+  
 if __name__ == "__main__":
     main()
 

@@ -16,7 +16,7 @@ from jdex.loaders.torch import KnowledgeGraph
 
 class InconsistencyMetric(Enum):
     INC_AT_K = "inc_at_k"
-    SEM_AT_K = "sem_at_k"
+    SEM_AT_K_Base = "sem_at_k"
     AC_AT_K_1 = "ac_at_k_using_reasoner"
     AC_AT_K_2 = "ac_at_k_using_domain_range_rel"
 

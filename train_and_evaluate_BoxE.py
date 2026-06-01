@@ -60,6 +60,21 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir):
     else:
         print(f"Error: The source file '{test_tsv_path}' was not found.")
 
+
+    path_Ente2ID_dict = dataset_dir_multi / "Ent2ID.dict"
+    path_Rel2ID_dict = dataset_dir_multi / "Rel2ID.dict"
+    path_new_Ente2Id_dict = dataset_path / pc.INDIVIDUAL_MAPPINGS
+    path_new_Rel2Id_dict = dataset_path / pc.OBJ_PROP_MAPPINGS
+    with open(path_new_Ente2Id_dict, 'r', encoding='utf-8') as f:
+        new_ente2Id_dict = json.load(f)
+    with open(path_new_Rel2Id_dict, 'r', encoding='utf-8') as f:
+        new_Rel2Id_dict = json.load(f)
+
+    with open(path_Ente2ID_dict, 'wb') as f:
+        msgpack.pack(new_ente2Id_dict, f)
+    with open(path_Rel2ID_dict, 'wb') as f:
+        msgpack.pack(new_Rel2Id_dict, f)
+
     #Pre-processing
     command = f"conda activate boxe && cd Boxe && python KBUtils.py"
     result = subprocess.run(
@@ -74,19 +89,6 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir):
         print(
         f"=== ERROR DURING PREPROCESSING (Exit Code: {result.returncode}) ==="
     )
-    path_Ente2ID_dict = dataset_dir_multi / "Ent2ID.dict"
-    path_Rel2ID_dict = dataset_dir_multi / "Rel2ID.dict"
-    path_new_Ente2Id_dict = dataset_path / pc.INDIVIDUAL_MAPPINGS
-    path_new_Rel2Id_dict = dataset_path / pc.OBJ_PROP_MAPPINGS
-    with open(path_new_Ente2Id_dict, 'r', encoding='utf-8') as f:
-        new_ente2Id_dict = json.load(f)
-    with open(path_new_Rel2Id_dict, 'r', encoding='utf-8') as f:
-        new_Rel2Id_dict = json.load(f)
-
-    with open(path_Ente2ID_dict, 'wb') as f:
-        msgpack.pack(new_ente2Id_dict, f)
-    with open(path_Rel2ID_dict, 'wb') as f:
-        msgpack.pack(new_Rel2Id_dict, f)
 
     best_mrr = -1.0  
     best_result_weights_path = None
@@ -282,9 +284,13 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir):
 
 
 
-def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_path: str, reasoner_path: str,  best_result_weights_path: str, dataset_name: str, output_directory: str, embedding_dim: int, entity_to_id_path, relation_to_id_path, kg, metric_selection: InconsistencyMetric):
+def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_path: str, reasoner_path: str,  best_result_weights_path: str, dataset_name: str, output_directory: str, embedding_dim: int, entity_to_id_path, relation_to_id_path, kg, metrics: List[InconsistencyMetric]):
     print("---- Evaluating using inconsistency metrics ----")
+    boxE_outputDir = Path(output_directory) / "BoxE"
+    os.makedirs(boxE_outputDir, exist_ok=True)
+    metrics_file_path = os.path.join(boxE_outputDir, "Inconsistent_Metrics.txt")
     os.makedirs(output_directory, exist_ok=True)
+
     result = subprocess.run(
         [
             "conda", "run", "-n", "boxe",
@@ -293,27 +299,62 @@ def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_p
             "--weights", os.path.normpath(os.path.abspath(os.path.join(best_result_weights_path, "values.ckpt"))),
             "--embedding_dim", str(embedding_dim),
             "--output", os.path.normpath(os.path.abspath(output_directory)),
+            "--type", "tail",
         ],
         cwd="BoxE",
-        capture_output=True,
+        capture_output= True,
         text=True
     )
     if "DONE" not in result.stdout:
         print(result.stderr)
         raise RuntimeError("BoxE scoring failed!")
 
-    scores_np = np.load(os.path.join(output_directory, "scores.npy"))
-    hrt_np = np.load(os.path.join(output_directory, "hrt.npy"))
-    scores_tensor = torch.tensor(scores_np, dtype=torch.float32)
-    hrt_tensor = torch.tensor(hrt_np, dtype=torch.long)
-    for k in [1, 3, 10]:
-        inc_evaluator = InconsistentEvaluator(ontology_path, train_path, output_kg_path, reasoner_path, entity_to_id_path, relation_to_id_path, metric_selection, kg, k, filtered=True)
-        inc_evaluator.process_scores_(
-            hrt_batch=hrt_tensor,
-            target="tail",
-            scores=scores_tensor,
-        )
-        prova = inc_evaluator.finalize()
-        print(str(prova))
+    scores_np_tail = np.load(os.path.join(output_directory, "scores_tail.npy"))
+    hrt_np_tail = np.load(os.path.join(output_directory, "hrt_tail.npy"))
+    scores_tensor_tail = torch.tensor(scores_np_tail, dtype=torch.float32)
+    hrt_tensor_tail = torch.tensor(hrt_np_tail, dtype=torch.long)
+
+
+    result = subprocess.run(
+        [
+            "conda", "run", "-n", "boxe",
+            "python", "run_boxe_scoring.py",
+            "--dataset", dataset_name,
+            "--weights", os.path.normpath(os.path.abspath(os.path.join(best_result_weights_path, "values.ckpt"))),
+            "--embedding_dim", str(embedding_dim),
+            "--output", os.path.normpath(os.path.abspath(output_directory)),
+            "--type", "head",
+        ],
+        cwd="BoxE",
+        capture_output= True,
+        text=True
+    )
+    if "DONE" not in result.stdout:
+        print(result.stderr)
+        raise RuntimeError("BoxE scoring failed!")
+
+    scores_np_head = np.load(os.path.join(output_directory, "scores_head.npy"))
+    hrt_np_head = np.load(os.path.join(output_directory, "hrt_head.npy"))
+    scores_tensor_head = torch.tensor(scores_np_head, dtype=torch.float32)
+    hrt_tensor_head = torch.tensor(hrt_np_head, dtype=torch.long)
+    for metric in metrics:
+        print(f"------Metric={metric}------------------")
+        for k in [1, 3, 10]:
+            print(f"------K={k}------------------")
+            inc_evaluator = InconsistentEvaluator(ontology_path, train_path, output_kg_path, reasoner_path, entity_to_id_path, relation_to_id_path, metric, kg, k, filtered=True)
+            inc_evaluator.process_scores_(
+                hrt_batch=hrt_tensor_tail,
+                target="tail",
+                scores=scores_tensor_tail,
+            )
+            inc_evaluator.process_scores_(
+                hrt_batch=hrt_tensor_head,
+                target="head",
+                scores=scores_tensor_head,
+            )
+            inc_results = inc_evaluator.finalize()
+            print(f"{metric.name}_{k}: {str(inc_results.data)}")
+            with open(metrics_file_path, "a", encoding="utf-8") as f:
+                f.write(f"{metric.name}_{k}: {str(inc_results.data)}\n")
 
 
