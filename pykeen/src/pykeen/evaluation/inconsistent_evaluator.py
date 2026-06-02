@@ -5,6 +5,10 @@ from typing import NamedTuple, ClassVar, Mapping
 import torch
 import numpy as np
 import rdflib
+import shutil
+import threading
+import queue
+from concurrent.futures import ThreadPoolExecutor
 from jdex.owl.reasoning import Reasoner
 from pathlib import Path
 import json
@@ -40,9 +44,13 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
     
     metric_result_cls = InconsistentMetricResults
 
-    def __init__(self, ontology_path:str, train_path:str, output_kg_path:str, reasoner_path:str, entity_to_id_path:str, relation_to_id_path:str, metric:InconsistencyMetric, kg: KnowledgeGraph, k, **kwargs):
+    def __init__(self, ontology_path:str, train_path:str, output_kg_path:str, reasoner_path:str, entity_to_id_path:str, relation_to_id_path:str, metric:InconsistencyMetric, kg: KnowledgeGraph, k, num_workers:int=4, **kwargs):
         super().__init__(**kwargs)
         self.kg = kg
+        # Number of parallel Konclude workers for reasoner-based metrics.
+        # RAM is the bottleneck: each worker loads the full ontology in memory.
+        # Tune as: (free_RAM_GB - 4) / RAM_per_Konclude_GB, rounded down.
+        self.num_workers = num_workers
         self.ontology_path = ontology_path
         self.train_path = train_path
         self.output_kg_path = output_kg_path
@@ -100,6 +108,17 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
             r = hrt_batch[:, 1].unsqueeze(1).expand(-1, self.k)  # (batch_size, k)
             t = hrt_batch[:, 2].unsqueeze(1).expand(-1, self.k)  # (batch_size, k)
             predictions = torch.stack([top_k, r, t], dim=2)     #(batch_size, k, 3) 
+
+        # Pre-fill the consistency cache in parallel for reasoner-based metrics,
+        # so the sequential metric loops below only hit the cache.
+        if self.metric in (InconsistencyMetric.INC_AT_K, InconsistencyMetric.AC_AT_K_1):
+            uris = [
+                (self.id_to_entity[t[0].item()],
+                 self.id_to_relation[t[1].item()],
+                 self.id_to_entity[t[2].item()])
+                for prediction in predictions for t in prediction
+            ]
+            self._prefetch_consistency(uris)
 
         if self.metric == InconsistencyMetric.INC_AT_K:
             for prediction in predictions:
@@ -162,6 +181,69 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
             return bool(all_types_tail.intersection(relation_ranges))
 
 
+
+    def _consistency_on_file(self, kg_file, head, relation, tail) -> bool:
+        """Check consistency of a single triple appended to a private KG copy.
+
+        Same logic as :meth:`_is_consistent`, but operates on ``kg_file`` (a per-worker
+        copy of the base KG) so it can run concurrently. ``Reasoner.consistency`` is
+        stateless w.r.t. paths, so it is safe to call from multiple threads.
+        """
+        relation_tag = self._uri_to_prefix_tag(relation)
+        triple_xml = f'    <rdf:Description rdf:about="{head}">\n        <{relation_tag} rdf:resource="{tail}"/>\n    </rdf:Description>\n'
+        with open(kg_file, "r+b") as f:
+            content = f.read()
+            closing_tag = b"</rdf:RDF>"
+            pos = content.rfind(closing_tag)
+            if pos == -1:
+                raise ValueError("Tag </rdf:RDF> non trovato")
+            f.seek(pos)
+            f.write(triple_xml.encode("utf-8") + closing_tag)
+        result = self.reasoner.consistency(kg_file, verbose=0)
+        with open(kg_file, "r+b") as f:  # restore the base KG copy
+            content = f.read()
+            triple_bytes = triple_xml.encode("utf-8")
+            if triple_bytes in content:
+                h, sep, t = content.rpartition(triple_bytes)
+                content = h + t
+            f.seek(0)
+            f.write(content)
+            f.truncate()
+        return result
+
+    def _prefetch_consistency(self, triples_uris, num_workers=None) -> None:
+        """Populate ``self.consistency_cache`` in parallel using ``num_workers`` Konclude
+        instances, each working on its own copy of the base KG file."""
+        if num_workers is None:
+            num_workers = self.num_workers
+        todo = [t for t in set(triples_uris) if t not in self.consistency_cache]
+        if not todo:
+            return
+        num_workers = max(1, min(num_workers, len(todo)))
+
+        worker_files = [Path(f"{self.output_kg_path}.w{i}") for i in range(num_workers)]
+        for wf in worker_files:
+            shutil.copy(self.output_kg_path, wf)
+        file_queue = queue.Queue()
+        for wf in worker_files:
+            file_queue.put(wf)
+        lock = threading.Lock()
+
+        def task(tr):
+            wf = file_queue.get()
+            try:
+                res = self._consistency_on_file(wf, *tr)
+            finally:
+                file_queue.put(wf)
+            with lock:
+                self.consistency_cache[tr] = res
+
+        try:
+            with ThreadPoolExecutor(max_workers=num_workers) as ex:
+                list(ex.map(task, todo))
+        finally:
+            for wf in worker_files:
+                wf.unlink(missing_ok=True)
 
     def _is_consistent(self, triple: tuple) -> bool:
         """Verify if the given triple is consistent"""
