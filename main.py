@@ -206,7 +206,7 @@ def main():
             repeat = False
     dataset_path = select_dataset("datasets")
     dataset_name = os.path.basename(os.path.normpath(dataset_path))
-    output_directory = f"results_{model_selected}_{dataset_name}"
+    output_directory = f"results_{dataset_name}"
     os.makedirs(output_directory, exist_ok=True)
     print(f"Dataset selected: {dataset_name}")
     # Test
@@ -287,8 +287,9 @@ def main():
     print(f"{'Object property ranges':<35} | {kg.obj_props_range.shape}")
     print("\n")
 
-    metrics = [InconsistencyMetric]
+    metrics = []
     if sem:
+        output_directory = output_directory + "_Sem"
         repeat = True
         while(repeat):
             metric_selected = None
@@ -313,7 +314,8 @@ def main():
             if metric_selection is None:
                 repeat = True
             else: 
-                metrics.append(metric_selection)
+                if metric_selection not in metrics:
+                    metrics.append(metric_selection)
                 another = input("Do you want to choose another metric? (yes/no): ")
                 if another.lower() == "yes":
                     repeat = True
@@ -337,7 +339,8 @@ def main():
             if metric_selection is None:
                 repeat = True
             else: 
-                metrics.append(metric_selection)
+                if metric_selection not in metrics:
+                    metrics.append(metric_selection)
                 another = input("Do you want to choose another metric? (yes/no): ")
                 if another.lower() == "yes":
                     repeat = True
@@ -364,7 +367,8 @@ def main():
         }
         keys, values = zip(*grid_hyperparameters.items())
         experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
-        best_model_path = train_and_evaluate_TransE.train_TransE(dataset_path, entity_mapping, relation_mapping, experiments, output_directory)
+        #best_model_path = train_and_evaluate_TransE.train_TransE(dataset_path, entity_mapping, relation_mapping, experiments, output_directory)
+        best_model_path = Path(r"C:\Users\bevia\Documents\GitHub\ST-KGs\results_DBPEDIA_50K_C_ROFF\TransE\Best") 
         train_and_evaluate_TransE.evaluate_inc_best_model_TransE(ontology_path, train_path, output_kg_path, reasoner_path, best_model_path, dataset_path, entity_to_id_path, relation_to_id_path, output_directory, kg, metrics)
     elif model_selected == "BoxE":
         rules = False

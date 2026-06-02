@@ -111,14 +111,13 @@ def evaluate_inc_best_model_TransE(ontology_path: str, train_path:str, output_kg
     transE_outputDir = Path(output_directory) / "TransE"
     os.makedirs(transE_outputDir, exist_ok=True)
     metrics_file_path = os.path.join(transE_outputDir, "Inconsistent_Metrics.txt")
-    best_model = torch.load(Path(best_model_path) / "trained_model.pkl")
+    best_model = torch.load(Path(best_model_path) / "trained_model.pkl", weights_only=False)
     with open(entity_to_id_path, "r") as f:
         entity_mapping = json.load(f)
     with open(relation_to_id_path, "r") as f:
         relation_mapping = json.load(f)
-
     train_tf = TriplesFactory.from_path(
-    dataset_path / pc.TRAIN,
+        dataset_path / pc.TRAIN,
         entity_to_id=entity_mapping,
         relation_to_id=relation_mapping,
     )
@@ -133,14 +132,16 @@ def evaluate_inc_best_model_TransE(ontology_path: str, train_path:str, output_kg
         relation_to_id=relation_mapping,
     )
     for metric in metrics:
-        print(f"------Metric={metric}------------------")
+        print(f"------Metric={metric.name}------------------")
         for k in [1, 3, 10]:
-            print(f"------K={k}------------------")
+            print(f"-K={k}-")
             inc_evaluator = InconsistentEvaluator(ontology_path, train_path, output_kg_path, reasoner_path, entity_to_id_path, relation_to_id_path, metric, kg, k, filtered=True)
             inc_results = inc_evaluator.evaluate(
                 model=best_model,
                 mapped_triples=test_tf.mapped_triples,
                 additional_filter_triples=[train_tf.mapped_triples, valid_tf.mapped_triples],
+                batch_size=16,  
+                slice_size=256,  
             )
             print(f"{metric.name}_{k}: {str(inc_results.data)}")
             with open(metrics_file_path, "a", encoding="utf-8") as f:
