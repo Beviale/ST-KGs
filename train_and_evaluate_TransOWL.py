@@ -18,8 +18,8 @@ def train_TransOWL(dataset_path, entity_mapping, relation_mapping, experiments,
     output_dir_path = Path(output_directory) / "TransOWL"
     os.makedirs(output_dir_path, exist_ok=True)
 
-    # Extract the axioms (inverseOf / equivalentProperty) from the ontology
-    inverse_pairs, equivalent_pairs = convert_to_axioms_TransOWL.extract_axiom_pairs(
+    # Extract the axioms (inverseOf / equivalentProperty / subPropertyOf) from the ontology
+    inverse_pairs, equivalent_pairs, subproperty_pairs = convert_to_axioms_TransOWL.extract_axiom_pairs(
         ontology_path, kg
     )
 
@@ -59,7 +59,10 @@ def train_TransOWL(dataset_path, entity_mapping, relation_mapping, experiments,
                     scoring_fct_norm=1,
                     inverse_relations=inverse_pairs,
                     equivalent_relations=equivalent_pairs,
+                    subproperty_relations=subproperty_pairs,
                     regularizer_weight=params["reg_weight"],
+                    subproperty_weight=params["subprop_weight"],
+                    beta=params["beta"],
                 ),
                 optimizer='Adam',
                 optimizer_kwargs=dict(lr=params["lr"]),

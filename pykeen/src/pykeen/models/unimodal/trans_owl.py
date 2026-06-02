@@ -52,8 +52,11 @@ class TransOWL(ERModel[FloatTensor, FloatTensor, FloatTensor]):
         power_norm: bool = False,
         inverse_relations: Iterable[tuple[int, int]] | None = None,
         equivalent_relations: Iterable[tuple[int, int]] | None = None,
+        subproperty_relations: Iterable[tuple[int, int]] | None = None,
         inverse_weight: float = 1.0,
         equivalence_weight: float = 1.0,
+        subproperty_weight: float = 0.01,
+        beta: float = 0.9,
         regularizer_weight: float = 1.0,
         entity_initializer: Hint[Initializer] = xavier_uniform_,
         entity_constrainer: Hint[Constrainer] = functional.normalize,
@@ -75,10 +78,18 @@ class TransOWL(ERModel[FloatTensor, FloatTensor, FloatTensor]):
             relation index pairs $(r, q)$ such that $r \equiv q^-$ (``owl:inverseOf``).
         :param equivalent_relations:
             relation index pairs $(r, p)$ such that $r \equiv p$ (``owl:equivalentProperty``).
+        :param subproperty_relations:
+            relation index pairs $(r, p)$ such that $r \sqsubseteq p$ (``rdfs:subPropertyOf``);
+            order matters ($r$ sub-property, $p$ super-property).
         :param inverse_weight:
             weight $\lambda_1$ for the inverseOf regularization term.
         :param equivalence_weight:
             weight $\lambda_2$ for the equivalentProperty regularization term.
+        :param subproperty_weight:
+            weight for the subPropertyOf regularization term.
+        :param beta:
+            directional offset of the subPropertyOf term; $\beta = 1$ reduces it to plain
+            equality $\lVert r - p\rVert$.
         :param regularizer_weight:
             the overall axiom regularization weight $\lambda$.
 
@@ -121,8 +132,11 @@ class TransOWL(ERModel[FloatTensor, FloatTensor, FloatTensor]):
             relation_regularizer_kwargs = {
                 "inverse_pairs": inverse_relations,
                 "equivalence_pairs": equivalent_relations,
+                "subproperty_pairs": subproperty_relations,
                 "inverse_weight": inverse_weight,
                 "equivalence_weight": equivalence_weight,
+                "subproperty_weight": subproperty_weight,
+                "beta": beta,
                 "p": scoring_fct_norm,
                 "weight": regularizer_weight,
             }

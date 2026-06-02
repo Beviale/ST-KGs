@@ -407,6 +407,8 @@ def main():
             "margin":        [1.0, 2.0],
             "num_negs":      [32, 64],
             "reg_weight":    [1.0, 0.1],   # weight lambda of the axiom-based regularization
+            "subprop_weight":[0.01],       # weight of the subPropertyOf term
+            "beta":          [0.9],        # directional offset (1 - beta); beta=1 -> Option A
         }
         keys, values = zip(*grid_hyperparameters.items())
         experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]

@@ -345,6 +345,8 @@ class AxiomRegularizer(Regularizer):
       penalizing $\lVert r + q\rVert$;
     - ``equivalentProperty`` pairs ($r \equiv p$) are pushed towards equal vectors,
       penalizing $\lVert r - p\rVert$.
+    - ``subPropertyOf`` pairs ($r \sqsubseteq p$) are pushed towards a directional
+      offset, penalizing $\lVert (r - p) - (1 - \beta)\rVert$ (Eq. 8, [damato2021]_).
 
     The pairs are given as relation indices (matching the
     :class:`~pykeen.triples.TriplesFactory` ``relation_to_id`` mapping). The term is
@@ -356,14 +358,19 @@ class AxiomRegularizer(Regularizer):
     inverse_pairs: torch.LongTensor
     #: equivalentProperty relation index pairs, shape: (num_equivalence, 2)
     equivalence_pairs: torch.LongTensor
+    #: subPropertyOf relation index pairs (sub, super), shape: (num_subproperty, 2)
+    subproperty_pairs: torch.LongTensor
 
     def __init__(
         self,
         *,
         inverse_pairs: Iterable[tuple[int, int]] | None = None,
         equivalence_pairs: Iterable[tuple[int, int]] | None = None,
+        subproperty_pairs: Iterable[tuple[int, int]] | None = None,
         inverse_weight: float = 1.0,
         equivalence_weight: float = 1.0,
+        subproperty_weight: float = 1.0,
+        beta: float = 0.9,
         p: float = 2.0,
         weight: float = 1.0,
         apply_only_once: bool = True,
@@ -375,10 +382,19 @@ class AxiomRegularizer(Regularizer):
             relation index pairs $(r, q)$ such that $r \\equiv q^-$ (``owl:inverseOf``).
         :param equivalence_pairs:
             relation index pairs $(r, p)$ such that $r \\equiv p$ (``owl:equivalentProperty``).
+        :param subproperty_pairs:
+            relation index pairs $(r, p)$ such that $r \\sqsubseteq p$ (``rdfs:subPropertyOf``).
+            Order matters: $r$ is the sub-property, $p$ the super-property.
         :param inverse_weight:
             the weight $\\lambda_1$ for the inverseOf term.
         :param equivalence_weight:
             the weight $\\lambda_2$ for the equivalentProperty term.
+        :param subproperty_weight:
+            the weight for the subPropertyOf term.
+        :param beta:
+            the directional offset of the subPropertyOf term: $(r - p)$ is pushed towards
+            the constant $(1 - \\beta)$. With $\\beta = 1$ this reduces to plain equality
+            $\\lVert r - p\\rVert$ (i.e. a soft, symmetric constraint).
         :param p:
             the parameter $p$ of the $L_p$ norm.
         :param weight:
@@ -392,8 +408,11 @@ class AxiomRegularizer(Regularizer):
         self.p = p
         self.inverse_weight = inverse_weight
         self.equivalence_weight = equivalence_weight
+        self.subproperty_weight = subproperty_weight
+        self.beta = beta
         self.register_buffer(name="inverse_pairs", tensor=self._as_pairs(inverse_pairs))
         self.register_buffer(name="equivalence_pairs", tensor=self._as_pairs(equivalence_pairs))
+        self.register_buffer(name="subproperty_pairs", tensor=self._as_pairs(subproperty_pairs))
 
     @staticmethod
     def _as_pairs(pairs: Iterable[tuple[int, int]] | None) -> torch.LongTensor:
@@ -412,6 +431,11 @@ class AxiomRegularizer(Regularizer):
         if self.equivalence_pairs.numel():
             i, j = self.equivalence_pairs[:, 0], self.equivalence_pairs[:, 1]
             term = term + self.equivalence_weight * lp_norm(x[i] - x[j], p=self.p, dim=-1, normalize=False).sum()
+        if self.subproperty_pairs.numel():
+            i, j = self.subproperty_pairs[:, 0], self.subproperty_pairs[:, 1]
+            # directional offset (Eq. 8, d'Amato): (r_sub - r_super) should equal (1 - beta)
+            diff = x[i] - x[j] - (1.0 - self.beta)
+            term = term + self.subproperty_weight * lp_norm(diff, p=self.p, dim=-1, normalize=False).sum()
         return term
 
 
