@@ -314,7 +314,7 @@ def main():
                 repeat = True
             else: 
                 metrics.append(metric_selection)
-                another = choice("Do you want to choose another metric? (yes/no): ")
+                another = input("Do you want to choose another metric? (yes/no): ")
                 if another.lower() == "yes":
                     repeat = True
                 else:
@@ -326,7 +326,6 @@ def main():
             metric_selection = None
             print("1. Inc@K")
             print("2. AC@K (Inc@k)")
-            print("3. Repeat")
 
             metric_selected = input("Select a metric: ")
             if metric_selected == "1":
@@ -339,7 +338,7 @@ def main():
                 repeat = True
             else: 
                 metrics.append(metric_selection)
-                another = choice("Do you want to choose another metric? (yes/no): ")
+                another = input("Do you want to choose another metric? (yes/no): ")
                 if another.lower() == "yes":
                     repeat = True
                 else:
@@ -368,6 +367,12 @@ def main():
         best_model_path = train_and_evaluate_TransE.train_TransE(dataset_path, entity_mapping, relation_mapping, experiments, output_directory)
         train_and_evaluate_TransE.evaluate_inc_best_model_TransE(ontology_path, train_path, output_kg_path, reasoner_path, best_model_path, dataset_path, entity_to_id_path, relation_to_id_path, output_directory, kg, metrics)
     elif model_selected == "BoxE":
+        rules = False
+        choice = input("Do you want to use the rules? (yes/no) ")
+        if choice.lower() == "yes":
+            rules = True
+            
+
         #grid_hyperparameters = {
             #"learningRate": [1e-3, 5e-4], 
             #"loss_margin": [3.0, 6.0, 9.0], 
@@ -384,7 +389,7 @@ def main():
         keys, values = zip(*grid_hyperparameters.items())
         experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
         output_dir_scoring = Path(output_directory) / "temp_scoring"
-        #best_weights_dir_path, best_params = train_and_evaluate_BoxE.train_BoxE(dataset_path, dataset_name, experiments, output_directory)
+        best_weights_dir_path, best_params = train_and_evaluate_BoxE.train_BoxE(dataset_path, dataset_name, experiments, output_directory, ontology_path, kg, rules)
         best_weights_dir_path = Path("BoxE") / f"weights_{dataset_name}" 
         train_and_evaluate_BoxE.evaluate_inc_best_model_BoxE(ontology_path, train_path, output_kg_path, reasoner_path, best_weights_dir_path, dataset_name, output_dir_scoring, 64, entity_to_id_path, relation_to_id_path, kg, metrics)
 

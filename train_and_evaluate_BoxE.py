@@ -20,13 +20,18 @@ import msgpack
 import msgpack_numpy as m
 import torch
 import msgpack
+import convert_to_rules_BoxE
 
 
-def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir):
+def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, ontology_path, kg, rules=False):
     dataset_dir = Path("Boxe") / "Datasets" / dataset_name
     dataset_dir_multi = Path("Boxe") / "DatasetsMulti" / dataset_name
     dataset_dir.mkdir(parents=True, exist_ok=True)
     dataset_dir_multi.mkdir(parents=True, exist_ok=True)
+    if rules:
+        print("=== CREATING THE RULES ===")
+        convert_to_rules_BoxE.convert_owl_to_boxe(ontology_path, kg, dataset_dir_multi / "rules.txt" )
+        print("=== RULES Created SUCCESSFULLY ===")
     train_tsv_path = dataset_path / "abox" / "splits" / "train.tsv"
     train_txt_path = dataset_dir / "train.txt"
     train_txt_path_multi = dataset_dir_multi / "train.txt"
@@ -87,7 +92,7 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir):
         print("=== PREPROCESSING COMPLETED SUCCESSFULLY ===")
     else:
         print(
-        f"=== ERROR DURING PREPROCESSING (Exit Code: {result.returncode}) ==="
+        f"=== ERROR DURING PREPROCESSING (Exit Code: {result.stderr}) ==="
     )
 
     best_mrr = -1.0  
@@ -110,19 +115,37 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir):
             pass
         #-------------TRAINING
         #command = f"conda activate boxe && cd Boxe && python training.py {dataset_name} -validation True -validCkpt 5 -logFName BoxE_NoRule_{dataset_name}_{str(params)} -epochs 10 -nbNegExp {params['nbNegExp']} -lossMargn {params['loss_margin']} -regLambda {params['reg_lambda']} -learningRate {params['learningRate']}"
-        command = (
-            f"conda activate boxe && "
-            f"cd BoxE && "
-            f"python Training.py {dataset_name} "
-            f"-validation True "
-            f"-validCkpt 5 "
-            f"-logFName \"{os.path.normpath(log_file_path_absolute)}\" "  
-            f"-epochs 2 "
-            f"-nbNegExp {params['nbNegExp']} "
-            f"-lossMargin {params['loss_margin']} "
-            f"-regLambda {params['reg_lambda']} "
-            f"-learningRate {params['learningRate']}"
-        )
+
+        if rules:
+            command = (
+                f"conda activate boxe && "
+                f"cd BoxE && "
+                f"python Training.py {dataset_name} "
+                f"-validation True "
+                f"-validCkpt 5 "
+                f"-logFName \"{os.path.normpath(log_file_path_absolute)}\" "  
+                f"-epochs 2 "
+                f"-nbNegExp {params['nbNegExp']} "
+                f"-lossMargin {params['loss_margin']} "
+                f"-regLambda {params['reg_lambda']} "
+                f"-learningRate {params['learningRate']} "
+                f"-ruleDir {os.path.normpath(os.path.abspath(dataset_dir_multi / "rules.txt"))}"
+            )
+        else:
+            command = (
+                f"conda activate boxe && "
+                f"cd BoxE && "
+                f"python Training.py {dataset_name} "
+                f"-validation True "
+                f"-validCkpt 5 "
+                f"-logFName \"{os.path.normpath(log_file_path_absolute)}\" "  
+                f"-epochs 2 "
+                f"-nbNegExp {params['nbNegExp']} "
+                f"-lossMargin {params['loss_margin']} "
+                f"-regLambda {params['reg_lambda']} "
+                f"-learningRate {params['learningRate']}"
+            )
+
         result = subprocess.run(
             command,
             shell=True, 
@@ -133,7 +156,7 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir):
             print("=== TRAINING COMPLETED SUCCESSFULLY ===")
         else:
             print(
-                f"=== ERROR DURING PREPROCESSING (Exit Code: {result.returncode}) ==="
+                f"=== ERROR DURING TRAINING (Exit Code: {result.stderr}) ==="
             )
             continue
         with open(log_file_path, "a", encoding="utf-8") as f:
@@ -284,7 +307,7 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir):
 
 
 
-def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_path: str, reasoner_path: str,  best_result_weights_path: str, dataset_name: str, output_directory: str, embedding_dim: int, entity_to_id_path, relation_to_id_path, kg, metrics: List[InconsistencyMetric]):
+def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_path: str, reasoner_path: str,  best_result_weights_path: str, dataset_name: str, output_directory: str, embedding_dim: int, entity_to_id_path, relation_to_id_path, kg, metrics: list[InconsistencyMetric]):
     print("---- Evaluating using inconsistency metrics ----")
     boxE_outputDir = Path(output_directory) / "BoxE"
     os.makedirs(boxE_outputDir, exist_ok=True)
