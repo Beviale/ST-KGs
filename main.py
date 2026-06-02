@@ -9,6 +9,7 @@ from jdex.loaders.torch import KnowledgeGraph
 import itertools
 import train_and_evaluate_BoxE
 import train_and_evaluate_TransE
+import train_and_evaluate_TransOWL
 import shutil
 from pykeen.evaluation import InconsistencyMetric
 import random
@@ -193,11 +194,14 @@ def main():
         model_selected = None
         print("1. TransE")
         print("2. BoxE")
+        print("3. TransOWL")
         model_selection = input("Select a model: ")
         if model_selection == "1":
             model_selected = "TransE"
         elif model_selection == "2":
              model_selected = "BoxE"
+        elif model_selection == "3":
+             model_selected = "TransOWL"
         else:
             print("Repeat the insertion")
         if model_selected is None:
@@ -394,8 +398,28 @@ def main():
         experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
         output_dir_scoring = Path(output_directory) / "temp_scoring"
         best_weights_dir_path, best_params = train_and_evaluate_BoxE.train_BoxE(dataset_path, dataset_name, experiments, output_directory, ontology_path, kg, rules)
-        best_weights_dir_path = Path("BoxE") / f"weights_{dataset_name}" 
+        best_weights_dir_path = Path("BoxE") / f"weights_{dataset_name}"
         train_and_evaluate_BoxE.evaluate_inc_best_model_BoxE(ontology_path, train_path, output_kg_path, reasoner_path, best_weights_dir_path, dataset_name, output_dir_scoring, 64, entity_to_id_path, relation_to_id_path, kg, metrics)
+    elif model_selected == "TransOWL":
+        grid_hyperparameters = {
+            "embedding_dim": [50, 100],
+            "lr":            [1e-3, 5e-4],
+            "margin":        [1.0, 2.0],
+            "num_negs":      [32, 64],
+            "reg_weight":    [1.0, 0.1],   # weight lambda of the axiom-based regularization
+        }
+        keys, values = zip(*grid_hyperparameters.items())
+        experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
+        best_model_path = train_and_evaluate_TransOWL.train_TransOWL(
+            dataset_path, entity_mapping, relation_mapping, experiments,
+            output_directory, ontology_path, kg
+        )
+        best_dir = Path(output_directory) / "TransOWL" / "Best"
+        train_and_evaluate_TransOWL.evaluate_inc_best_model_TransOWL(
+            ontology_path, train_path, output_kg_path, reasoner_path, best_dir,
+            dataset_path, entity_to_id_path, relation_to_id_path,
+            output_directory, kg, metrics
+        )
 
 
 def save_complete_mappings(dataset_path):

@@ -10,6 +10,9 @@
 .. [bordes2014] Bordes, A., *et al.* (2014). `A semantic matching energy function for learning with
                 multi-relational data <https://link.springer.com/content/pdf/10.1007%2Fs10994-013-5363-6.pdf>`_.
                 Machine
+.. [damato2021] d'Amato, C., Quatraro, N. F., & Fanizzi, N. (2021). `Injecting Background Knowledge into
+                Embedding Models for Predictive Tasks on Knowledge Graphs
+                <https://doi.org/10.1007/978-3-030-77385-4_27>`_. ESWC 2021.
 .. [dettmers2018] Dettmers, T., *et al.* (2018) `Convolutional 2d knowledge graph embeddings
                 <https://www.aaai.org/ocs/index.php/AAAI/AAAI18/paper/view/17366>`_.
                 Thirty-Second AAAI Conference on Artificial Intelligence.
@@ -104,6 +107,7 @@ from .trans_d import TransD
 from .trans_e import TransE
 from .trans_f import TransF
 from .trans_h import TransH
+from .trans_owl import TransOWL
 from .trans_r import TransR
 from .tucker import TuckER
 from .unstructured_model import UM
@@ -139,6 +143,7 @@ __all__ = [
     "TransE",
     "TransF",
     "TransH",
+    "TransOWL",
     "TransR",
     "TuckER",
     "UM",

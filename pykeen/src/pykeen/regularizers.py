@@ -25,6 +25,7 @@ __all__ = [
     "PowerSumRegularizer",
     "OrthogonalityRegularizer",
     "NormLimitRegularizer",
+    "AxiomRegularizer",
     # Utils
     "regularizer_resolver",
 ]
@@ -333,6 +334,85 @@ class OrthogonalityRegularizer(Regularizer):
             functional.cosine_similarity(*tensors, dim=-1).pow(2).subtract(self.epsilon).relu().sum()
         )
         self.updated = True
+
+
+class AxiomRegularizer(Regularizer):
+    r"""Axiom-based regularizer over relation embeddings (TransOWL / TransE\ :sup:`R`).
+
+    Injects background knowledge by constraining relation embeddings directly:
+
+    - ``inverseOf`` pairs ($r \equiv q^-$) are pushed towards opposite vectors,
+      penalizing $\lVert r + q\rVert$;
+    - ``equivalentProperty`` pairs ($r \equiv p$) are pushed towards equal vectors,
+      penalizing $\lVert r - p\rVert$.
+
+    The pairs are given as relation indices (matching the
+    :class:`~pykeen.triples.TriplesFactory` ``relation_to_id`` mapping). The term is
+    computed over the *whole* relation embedding matrix, so this regularizer must be
+    registered via :meth:`~pykeen.models.ERModel.append_weight_regularizer`.
+    """
+
+    #: inverseOf relation index pairs, shape: (num_inverse, 2)
+    inverse_pairs: torch.LongTensor
+    #: equivalentProperty relation index pairs, shape: (num_equivalence, 2)
+    equivalence_pairs: torch.LongTensor
+
+    def __init__(
+        self,
+        *,
+        inverse_pairs: Iterable[tuple[int, int]] | None = None,
+        equivalence_pairs: Iterable[tuple[int, int]] | None = None,
+        inverse_weight: float = 1.0,
+        equivalence_weight: float = 1.0,
+        p: float = 2.0,
+        weight: float = 1.0,
+        apply_only_once: bool = True,
+        **kwargs,
+    ):
+        """Initialize the regularizer.
+
+        :param inverse_pairs:
+            relation index pairs $(r, q)$ such that $r \\equiv q^-$ (``owl:inverseOf``).
+        :param equivalence_pairs:
+            relation index pairs $(r, p)$ such that $r \\equiv p$ (``owl:equivalentProperty``).
+        :param inverse_weight:
+            the weight $\\lambda_1$ for the inverseOf term.
+        :param equivalence_weight:
+            the weight $\\lambda_2$ for the equivalentProperty term.
+        :param p:
+            the parameter $p$ of the $L_p$ norm.
+        :param weight:
+            the overall regularization weight.
+        :param apply_only_once:
+            the axiom constraints are computed once per batch over the full matrix.
+        :param kwargs:
+            additional keyword-based parameters passed to :meth:`Regularizer.__init__`.
+        """
+        super().__init__(weight=weight, apply_only_once=apply_only_once, **kwargs)
+        self.p = p
+        self.inverse_weight = inverse_weight
+        self.equivalence_weight = equivalence_weight
+        self.register_buffer(name="inverse_pairs", tensor=self._as_pairs(inverse_pairs))
+        self.register_buffer(name="equivalence_pairs", tensor=self._as_pairs(equivalence_pairs))
+
+    @staticmethod
+    def _as_pairs(pairs: Iterable[tuple[int, int]] | None) -> torch.LongTensor:
+        """Normalize an iterable of index pairs to a (n, 2) long tensor."""
+        if not pairs:
+            return torch.empty(0, 2, dtype=torch.long)
+        return torch.as_tensor(list(pairs), dtype=torch.long)
+
+    # docstr-coverage: inherited
+    def forward(self, x: FloatTensor) -> FloatTensor:  # noqa: D102
+        # x: the full relation embedding matrix, shape (num_relations, dim)
+        term = x.new_zeros(())
+        if self.inverse_pairs.numel():
+            i, j = self.inverse_pairs[:, 0], self.inverse_pairs[:, 1]
+            term = term + self.inverse_weight * lp_norm(x[i] + x[j], p=self.p, dim=-1, normalize=False).sum()
+        if self.equivalence_pairs.numel():
+            i, j = self.equivalence_pairs[:, 0], self.equivalence_pairs[:, 1]
+            term = term + self.equivalence_weight * lp_norm(x[i] - x[j], p=self.p, dim=-1, normalize=False).sum()
+        return term
 
 
 class CombinedRegularizer(Regularizer):

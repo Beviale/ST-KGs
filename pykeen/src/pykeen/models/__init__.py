@@ -87,6 +87,7 @@ from .unimodal import (
     TransE,
     TransF,
     TransH,
+    TransOWL,
     TransR,
     TuckER,
 )
@@ -133,6 +134,7 @@ __all__ = [
     "TransE",
     "TransF",
     "TransH",
+    "TransOWL",
     "TransR",
     "TuckER",
     "UM",

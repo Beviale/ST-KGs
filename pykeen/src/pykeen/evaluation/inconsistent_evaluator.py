@@ -16,7 +16,7 @@ from jdex.loaders.torch import KnowledgeGraph
 
 class InconsistencyMetric(Enum):
     INC_AT_K = "inc_at_k"
-    SEM_AT_K_Base = "sem_at_k"
+    SEM_AT_K = "sem_at_k"
     AC_AT_K_1 = "ac_at_k_using_reasoner"
     AC_AT_K_2 = "ac_at_k_using_domain_range_rel"
 
@@ -56,6 +56,9 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
         self.id_to_relation = {v: k for k, v in self.relation_to_id.items()}
         self.k = k
         self.inconsistencies = {"head": [], "tail": []}
+        # Cache reasoner consistency results per unique triple (uri_h, uri_r, uri_t).
+        # The base KG is fixed, so the outcome only depends on the added triple.
+        self.consistency_cache = {}
         self.reasoner = Reasoner(
                             self.reasoner_path,
                             java8_path=Path(r"C:\Program Files\Java\jdk1.8.0_202"),
@@ -115,7 +118,7 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
                         consistent_count += 1
                         consistency_sum += consistent_count / (i + 1)
                 ac_at_k = consistency_sum / self.k
-                self.consistencies[target].append(ac_at_k)
+                self.inconsistencies[target].append(ac_at_k)
         elif self.metric == InconsistencyMetric.SEM_AT_K:
             for prediction in predictions:
                 inconsistent_for_triple = 0
@@ -133,7 +136,7 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
                         consistent_count += 1
                         consistency_sum += consistent_count / (i + 1)
                 ac_at_k = consistency_sum / self.k
-                self.consistencies[target].append(ac_at_k)
+                self.inconsistencies[target].append(ac_at_k)
 
 
 
@@ -166,6 +169,11 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
         relation = self.id_to_relation[triple[1].item()]
         relation_tag = self._uri_to_prefix_tag(relation)
         tail = self.id_to_entity[triple[2].item()]     
+
+        cache_key = (head, relation, tail)
+        if cache_key in self.consistency_cache:
+            return self.consistency_cache[cache_key]
+        
         triple_xml = f'    <rdf:Description rdf:about="{head}">\n        <{relation_tag} rdf:resource="{tail}"/>\n    </rdf:Description>\n' 
         with open(self.output_kg_path, "r+b") as f:
             content = f.read()
@@ -187,10 +195,12 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
             f.seek(0)
             f.write(content)
             f.truncate()  
+        self.consistency_cache[cache_key] = result
         return result
 
     def clear(self) -> None:
         self.inconsistencies = {"head": [], "tail": []}
+        self.consistency_cache = {}
 
     def finalize(self) -> InconsistentMetricResults:
         data = {}
