@@ -1,1 +1,3 @@
 INC_AT_K_1: {InconsistentMetricKey(side='head', metric='inc_at_k'): np.float64(0.0010518934081346423), InconsistentMetricKey(side='tail', metric='inc_at_k'): np.float64(0.006311360448807854)}
+INC_AT_K_3: {InconsistentMetricKey(side='head', metric='inc_at_k'): np.float64(0.002220663861617578), InconsistentMetricKey(side='tail', metric='inc_at_k'): np.float64(0.013791491351098643)}
+INC_AT_K_10: {InconsistentMetricKey(side='head', metric='inc_at_k'): np.float64(0.0044530154277699855), InconsistentMetricKey(side='tail', metric='inc_at_k'): np.float64(0.02468443197755961)}
