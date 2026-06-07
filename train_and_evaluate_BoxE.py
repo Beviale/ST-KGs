@@ -307,7 +307,7 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
 
 
 
-def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_path: str, reasoner_path: str,  best_result_weights_path: str, dataset_name: str, output_directory: str, embedding_dim: int, entity_to_id_path, relation_to_id_path, kg, metrics: list[InconsistencyMetric]):
+def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_path: str, reasoner_path: str,  best_result_weights_path: str, dataset_name: str, output_directory: str, temp_dir:str, embedding_dim: int, entity_to_id_path, relation_to_id_path, kg, metrics: list[InconsistencyMetric]):
     print("---- Evaluating using inconsistency metrics ----")
     boxE_outputDir = Path(output_directory) / "BoxE"
     os.makedirs(boxE_outputDir, exist_ok=True)
@@ -321,7 +321,7 @@ def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_p
             "--dataset", dataset_name,
             "--weights", os.path.normpath(os.path.abspath(os.path.join(best_result_weights_path, "values.ckpt"))),
             "--embedding_dim", str(embedding_dim),
-            "--output", os.path.normpath(os.path.abspath(output_directory)),
+            "--output", os.path.normpath(os.path.abspath(temp_dir)),
             "--type", "tail",
         ],
         cwd="BoxE",
@@ -332,8 +332,8 @@ def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_p
         print(result.stderr)
         raise RuntimeError("BoxE scoring failed!")
 
-    scores_np_tail = np.load(os.path.join(output_directory, "scores_tail.npy"))
-    hrt_np_tail = np.load(os.path.join(output_directory, "hrt_tail.npy"))
+    scores_np_tail = np.load(os.path.join(temp_dir, "scores_tail.npy"))
+    hrt_np_tail = np.load(os.path.join(temp_dir, "hrt_tail.npy"))
     scores_tensor_tail = torch.tensor(scores_np_tail, dtype=torch.float32)
     hrt_tensor_tail = torch.tensor(hrt_np_tail, dtype=torch.long)
 
@@ -345,7 +345,7 @@ def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_p
             "--dataset", dataset_name,
             "--weights", os.path.normpath(os.path.abspath(os.path.join(best_result_weights_path, "values.ckpt"))),
             "--embedding_dim", str(embedding_dim),
-            "--output", os.path.normpath(os.path.abspath(output_directory)),
+            "--output", os.path.normpath(os.path.abspath(temp_dir)),
             "--type", "head",
         ],
         cwd="BoxE",
@@ -356,8 +356,8 @@ def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_p
         print(result.stderr)
         raise RuntimeError("BoxE scoring failed!")
 
-    scores_np_head = np.load(os.path.join(output_directory, "scores_head.npy"))
-    hrt_np_head = np.load(os.path.join(output_directory, "hrt_head.npy"))
+    scores_np_head = np.load(os.path.join(temp_dir, "scores_head.npy"))
+    hrt_np_head = np.load(os.path.join(temp_dir, "hrt_head.npy"))
     scores_tensor_head = torch.tensor(scores_np_head, dtype=torch.float32)
     hrt_tensor_head = torch.tensor(hrt_np_head, dtype=torch.long)
     for metric in metrics:

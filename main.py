@@ -25,18 +25,15 @@ def nt_to_tsv(input_path: str, output_path: str) -> None:
             if not line or line.startswith("#"):
                 continue
             
-            # rimuovi il punto finale
             if line.endswith(" ."):
                 line = line[:-2].strip()
             
-            # splitta in h, r, t
             parts = line.split(" ", 2)
             if len(parts) != 3:
                 continue
             
             head, relation, tail = parts
             
-            # rimuovi < > dagli URI
             head = head.strip("<>")
             relation = relation.strip("<>")
             tail = tail.strip("<>").strip('"')
@@ -80,112 +77,25 @@ def select_dataset(base_path: str) -> str:
     choice = int(input("Select a dataset: ")) - 1
     return Path(os.path.join(base_path, datasets[choice]))
 
-def is_valid_triple(line, train_entities, train_relations):
-    parts = line.split()
-    head = parts[0].replace("<", "").replace(">", "")
-    relation = parts[1].replace("<", "").replace(">", "")
-    tail = parts[2].replace("<", "").replace(">", "")
-    return head in train_entities and tail in train_entities and relation in train_relations
-
-def prepare_for_sem_at_k(dataset_path, kg):
-    test_path_complete = Path(dataset_path) / "abox" / "splits" / "test_complete.nt"
-    train_path_complete = Path(dataset_path) / "abox" / "splits" / "train_complete.nt"
-    valid_path_complete = Path(dataset_path) / "abox" / "splits" / "valid_complete.nt"
-
-    test_path_sem = Path(dataset_path) / "abox" / "splits" / "sem_at_k.nt"
-    train_path_sem = Path(dataset_path) / "abox" / "splits" / "train_sem_at_k.nt"
-    valid_path_sem = Path(dataset_path) / "abox" / "splits" / "valid_sem_at_k.nt"
-
-    sem_triples = []
-    with open(test_path_complete, "r") as f_in:
-        for line in f_in:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = line.split()
-            head, relation, tail = parts[0].replace("<", "").replace(">", ""), parts[1].replace("<", "").replace(">", ""), parts[2].replace("<", "").replace(">", "")
-            if not set(kg.individual_classes(kg.individual_to_id(head)).tolist()):
-                continue
-            if not set(kg.individual_classes(kg.individual_to_id(tail)).tolist()):
-                continue
-            if not set(kg.obj_prop_domain(kg.obj_prop_to_id(relation)).tolist()):
-                continue
-            if not set(kg.obj_prop_range(kg.obj_prop_to_id(relation)).tolist()):
-                continue
-            sem_triples.append(line)
-
-    with open(train_path_complete, "r") as f_in:
-        for line in f_in:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = line.split()
-            head, relation, tail = parts[0].replace("<", "").replace(">", ""), parts[1].replace("<", "").replace(">", ""), parts[2].replace("<", "").replace(">", "")
-            if not set(kg.individual_classes(kg.individual_to_id(head)).tolist()):
-                continue
-            if not set(kg.individual_classes(kg.individual_to_id(tail)).tolist()):
-                continue
-            if not set(kg.obj_prop_domain(kg.obj_prop_to_id(relation)).tolist()):
-                continue
-            if not set(kg.obj_prop_range(kg.obj_prop_to_id(relation)).tolist()):
-                continue
-            sem_triples.append(line)
-
-    with open(valid_path_complete, "r") as f_in:
-        for line in f_in:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = line.split()
-            head, relation, tail = parts[0].replace("<", "").replace(">", ""), parts[1].replace("<", "").replace(">", ""), parts[2].replace("<", "").replace(">", "")
-            if not set(kg.individual_classes(kg.individual_to_id(head)).tolist()):
-                continue
-            if not set(kg.individual_classes(kg.individual_to_id(tail)).tolist()):
-                continue
-            if not set(kg.obj_prop_domain(kg.obj_prop_to_id(relation)).tolist()):
-                continue
-            if not set(kg.obj_prop_range(kg.obj_prop_to_id(relation)).tolist()):
-                continue
-            sem_triples.append(line)
+RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
 
-    random.seed(42)
-    random.shuffle(sem_triples)
+def is_sem_variant(dataset_name: str) -> bool:
+    """Whether the dataset is a Sem@K-filtered variant, from its name suffix."""
+    if dataset_name.endswith("_NO_SEM_TYPE"):
+        return False
+    if dataset_name.endswith("_SEM_TYPE"):
+        return True
+    if dataset_name.endswith("_NOSEM"):
+        return False
+    if dataset_name.endswith("_SEM"):
+        return True
+    return False
 
-    n = len(sem_triples)
-    train_end = int(n * 0.8)
-    valid_end = int(n * 0.9)
 
-    train_triples = sem_triples[:train_end]
-    valid_triples = sem_triples[valid_end:]
-    test_triples = sem_triples[train_end:valid_end]
-
-    train_entities = set()
-    train_relations = set()
-    for line in train_triples:
-        parts = line.split()
-        head = parts[0].replace("<", "").replace(">", "")
-        relation = parts[1].replace("<", "").replace(">", "")
-        tail = parts[2].replace("<", "").replace(">", "")
-        train_entities.add(head)
-        train_entities.add(tail)
-        train_relations.add(relation)
-
-    # filtra valid e test
-    valid_triples = [t for t in valid_triples if is_valid_triple(t, train_entities, train_relations)]
-    test_triples = [t for t in test_triples if is_valid_triple(t, train_entities, train_relations)]
-
-    # salva
-    with open(train_path_sem, "w") as f:
-        f.write("\n".join(train_triples))
-    with open(valid_path_sem, "w") as f:
-        f.write("\n".join(valid_triples))
-    with open(test_path_sem, "w") as f:
-        f.write("\n".join(test_triples))
-
-    print(f"(For Sem@K) Train: {len(train_triples)}, Valid: {len(valid_triples)}, Test: {len(test_triples)}")
-
-    
+def has_type_triples(relation_mapping: dict) -> bool:
+    """Whether the dataset contains rdf:type triples (classes are entities)."""
+    return RDF_TYPE in relation_mapping
 
 
 def main():
@@ -213,72 +123,11 @@ def main():
     output_directory = f"results_{dataset_name}"
     os.makedirs(output_directory, exist_ok=True)
     print(f"Dataset selected: {dataset_name}")
-    # Test
-    path_complete = Path(dataset_path) / "abox" / "splits" / "test_complete.nt"
-    path_test = Path(dataset_path) / "abox" / "splits" / "test.nt"
-    if not os.path.exists(path_complete):
-        shutil.copy(path_test, path_complete)
-    else:
-        shutil.copy(path_complete, path_test)
-    # Train
-    path_complete = Path(dataset_path) / "abox" / "splits" / "train_complete.nt"
-    path_test = Path(dataset_path) / "abox" / "splits" / "train.nt"
-    if not os.path.exists(path_complete):
-        shutil.copy(path_test, path_complete)
-    else:
-        shutil.copy(path_complete, path_test)
-    # Val
-    path_complete = Path(dataset_path) / "abox" / "splits" / "valid_complete.nt"
-    path_test = Path(dataset_path) / "abox" / "splits" / "valid.nt"
-    if not os.path.exists(path_complete):
-        shutil.copy(path_test, path_complete)
-    else:
-        shutil.copy(path_complete, path_test)
 
     create_tsv_files(dataset_path, True)
-    save_complete_mappings(dataset_path)
-    kg = KnowledgeGraph(
-        path=dataset_path
-    )
-    prepare_for_sem_at_k(dataset_path, kg)
-    sem = False
-    repeat = True
-    while(repeat):
-        choice = input("Do you want to use the test set with untyped entities and relations filtered out? (yes/no): ")
-        if choice.lower() == "no":
-            sem = False
-            repeat=False
-        elif choice.lower() == "yes":
-            sem = True
-            repeat=False
-            source = Path(dataset_path) / "abox" / "splits" / "sem_at_k.nt"
-            destination = Path(dataset_path) / "abox" / "splits" / "test.nt"
-            shutil.copy(source, destination)
-            source = Path(dataset_path) / "abox" / "splits" / "train_sem_at_k.nt"
-            destination = Path(dataset_path) / "abox" / "splits" / "train.nt"
-            shutil.copy(source, destination)
-            source = Path(dataset_path) / "abox" / "splits" / "valid_sem_at_k.nt"
-            destination = Path(dataset_path) / "abox" / "splits" / "valid.nt"
-            shutil.copy(source, destination)
+    kg = KnowledgeGraph(path=dataset_path)
+    sem = is_sem_variant(dataset_name)
 
-            rebuild_mappings(dataset_path)
-            mappings_dir_path = Path(dataset_path) / "mappings"
-            mappings = ["individual_to_id", "class_to_id", "object_property_to_id"]
-            for mapping in mappings:
-                source = mappings_dir_path / f"{mapping}_sem.json"
-                destination = mappings_dir_path / f"{mapping}.json"
-                if source.exists():
-                    shutil.copy(source, destination)
-                    print(f"Copied {source.name} → {destination.name}")
-                else:
-                    print(f"Warning: {source.name} not found, skipping...")
-        else:
-            print("Incorrect choice!")
-
-    create_tsv_files(dataset_path, True)
-    kg = KnowledgeGraph(
-        path=dataset_path
-    )
     print(f"{'Dataset Component':<35} | {'Shape'}")
     print("-" * 50)
     print(f"{'Training triples':<35} | {kg.train.shape}")
@@ -396,10 +245,10 @@ def main():
 
         keys, values = zip(*grid_hyperparameters.items())
         experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
-        output_dir_scoring = Path(output_directory) / "temp_scoring"
+        temp_dir = Path(output_directory) / "temp_scoring"
         best_weights_dir_path, best_params = train_and_evaluate_BoxE.train_BoxE(dataset_path, dataset_name, experiments, output_directory, ontology_path, kg, rules)
         best_weights_dir_path = Path("BoxE") / f"weights_{dataset_name}"
-        train_and_evaluate_BoxE.evaluate_inc_best_model_BoxE(ontology_path, train_path, output_kg_path, reasoner_path, best_weights_dir_path, dataset_name, output_dir_scoring, 64, entity_to_id_path, relation_to_id_path, kg, metrics)
+        train_and_evaluate_BoxE.evaluate_inc_best_model_BoxE(ontology_path, train_path, output_kg_path, reasoner_path, best_weights_dir_path, dataset_name, output_directory, temp_dir, 64, entity_to_id_path, relation_to_id_path, kg, metrics)
     elif model_selected == "TransOWL":
         grid_hyperparameters = {
             "embedding_dim": [50, 100],
@@ -408,6 +257,7 @@ def main():
             "num_negs":      [32, 64],
             "reg_weight":    [1.0, 0.1],   # weight lambda of the axiom-based regularization
             "subprop_weight":[0.01],       # weight of the subPropertyOf term
+            "subclass_weight":[0.01],      # weight of the subClassOf term (only on *_TYPE datasets)
             "beta":          [0.9],        # directional offset (1 - beta); beta=1 -> Option A
         }
         keys, values = zip(*grid_hyperparameters.items())
@@ -424,66 +274,6 @@ def main():
         )
 
 
-def save_complete_mappings(dataset_path):
-    mappings_dir_path = Path(dataset_path) / "mappings"
-    
-    files = [
-        "individual_to_id",
-        "object_property_to_id"
-    ]
-    
-    for file in files:
-        complete_path = mappings_dir_path / f"{file}_complete.json"
-        original_path = mappings_dir_path / f"{file}.json"
-        
-        if not complete_path.exists():
-            if not original_path.exists():
-                print(f"Warning: {original_path} not found, skipping...")
-                continue
-            with open(original_path, "r") as f:
-                data = json.load(f)
-            with open(complete_path, "w") as f:
-                json.dump(data, f, indent=4)
-        else:
-            shutil.copy(complete_path, original_path)
-
-
-def rebuild_mappings(dataset_path):
-    mappings_dir_path = Path(dataset_path) / "mappings"
-    train_path = Path(dataset_path) / "abox" / "splits" / "train.nt"
-    test_path = Path(dataset_path) / "abox" / "splits" / "test.nt"
-    valid_path = Path(dataset_path) / "abox" / "splits" / "valid.nt"
-
-    all_entities = set()
-    all_relations = set()
-
-    for split_path in [train_path, valid_path, test_path]:
-        with open(split_path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                parts = line.split()
-                head = parts[0].replace("<", "").replace(">", "")
-                relation = parts[1].replace("<", "").replace(">", "")
-                tail = parts[2].replace("<", "").replace(">", "")
-                all_entities.add(head)
-                all_entities.add(tail)
-                all_relations.add(relation)
-
-    ent2id = {ent: idx for idx, ent in enumerate(sorted(all_entities))}
-    rel2id = {rel: idx for idx, rel in enumerate(sorted(all_relations))}
-
-    print(f"Number of Entities: {len(ent2id)}, Number of Relations: {len(rel2id)}")
-
-    with open(mappings_dir_path / "individual_to_id_sem.json", "w") as f:
-        json.dump(ent2id, f, indent=4)
-    with open(mappings_dir_path / "object_property_to_id_sem.json", "w") as f:
-        json.dump(rel2id, f, indent=4)
-
-    return ent2id, rel2id
-
-  
 if __name__ == "__main__":
     main()
 

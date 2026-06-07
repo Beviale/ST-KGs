@@ -27,8 +27,8 @@ class InconsistencyMetric(Enum):
 
 
 class InconsistentMetricKey(NamedTuple):
-    side: str    # "head" o "tail" o "both"
-    metric: str  # "inc_at_k"
+    side: str    
+    metric: str  
 
 class InconsistentMetricResults(MetricResults[InconsistentMetricKey]):
     metrics: ClassVar[Mapping] = {}
@@ -47,9 +47,6 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
     def __init__(self, ontology_path:str, train_path:str, output_kg_path:str, reasoner_path:str, entity_to_id_path:str, relation_to_id_path:str, metric:InconsistencyMetric, kg: KnowledgeGraph, k, num_workers:int=4, **kwargs):
         super().__init__(**kwargs)
         self.kg = kg
-        # Number of parallel Konclude workers for reasoner-based metrics.
-        # RAM is the bottleneck: each worker loads the full ontology in memory.
-        # Tune as: (free_RAM_GB - 4) / RAM_per_Konclude_GB, rounded down.
         self.num_workers = num_workers
         self.ontology_path = ontology_path
         self.train_path = train_path
@@ -64,9 +61,10 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
         self.id_to_relation = {v: k for k, v in self.relation_to_id.items()}
         self.k = k
         self.inconsistencies = {"head": [], "tail": []}
-        # Cache reasoner consistency results per unique triple (uri_h, uri_r, uri_t).
-        # The base KG is fixed, so the outcome only depends on the added triple.
         self.consistency_cache = {}
+        self._superclass_closure = self._build_superclass_closure()
+        class_ids = [eid for uri, eid in self.entity_to_id.items() if uri in self.kg._class_to_id]
+        self._class_entity_ids = torch.tensor(sorted(class_ids), dtype=torch.long)
         self.reasoner = Reasoner(
                             self.reasoner_path,
                             java8_path=Path(r"C:\Program Files\Java\jdk1.8.0_202"),
@@ -98,6 +96,10 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
         true_scores=None,
         dense_positive_mask=None,
     ) -> None:
+        if self._class_entity_ids.numel():
+            scores = scores.clone()
+            scores[:, self._class_entity_ids.to(scores.device)] = float("-inf")
+
         top_k = torch.topk(scores, k=self.k, dim=1).indices
 
         if target == "tail":
@@ -109,8 +111,6 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
             t = hrt_batch[:, 2].unsqueeze(1).expand(-1, self.k)  # (batch_size, k)
             predictions = torch.stack([top_k, r, t], dim=2)     #(batch_size, k, 3) 
 
-        # Pre-fill the consistency cache in parallel for reasoner-based metrics,
-        # so the sequential metric loops below only hit the cache.
         if self.metric in (InconsistencyMetric.INC_AT_K, InconsistencyMetric.AC_AT_K_1):
             uris = [
                 (self.id_to_entity[t[0].item()],
@@ -159,12 +159,43 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
 
 
 
+    def _build_superclass_closure(self):
+        """Map each class id to its (transitive) superclass ids, from kg.taxonomy.
+
+        Makes Sem@K subsumption-aware: an individual of class C satisfies a domain/range
+        class D whenever C is a subclass of (or equal to) D, even if D is not directly
+        asserted on the individual (e.g. OFF datasets without materialized closure).
+        """
+        from collections import defaultdict, deque
+        direct = defaultdict(set)
+        for sub, sup in self.kg.taxonomy.tolist():
+            direct[sub].add(sup)
+        nodes = set(direct) | {s for sups in direct.values() for s in sups}
+        closure = {}
+        for c in nodes:
+            seen, dq = set(), deque([c])
+            while dq:
+                x = dq.popleft()
+                for sup in direct.get(x, ()):
+                    if sup not in seen:
+                        seen.add(sup)
+                        dq.append(sup)
+            closure[c] = seen
+        return closure
+
+    def _with_superclasses(self, class_ids):
+        """Expand a set of class ids with their transitive superclasses (ancestors)."""
+        out = set(class_ids)
+        for c in class_ids:
+            out |= self._superclass_closure.get(c, set())
+        return out
+
     def _is_consistent_relation(self, target, triple):
         head = triple[0]
         relation = triple[1].item()
         tail = triple[2].item()
         if target == "head":
-            all_types_head = set(self.kg.individual_classes(head).tolist())
+            all_types_head = self._with_superclasses(set(self.kg.individual_classes(head).tolist()))
             relation_domains = set(self.kg.obj_prop_domain(relation).tolist())
             if not all_types_head:
                 raise Exception(f"The head entity {head} does not have any class!")
@@ -172,7 +203,7 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
                 raise Exception(f"The relation {relation} does not have any domain!")
             return bool(all_types_head.intersection(relation_domains))
         elif target == "tail":
-            all_types_tail = set(self.kg.individual_classes(tail).tolist())
+            all_types_tail = self._with_superclasses(set(self.kg.individual_classes(tail).tolist()))
             relation_ranges = set(self.kg.obj_prop_range(relation).tolist())
             if not all_types_tail:
                 raise Exception(f"The tail entity {tail} does not have any class!")
@@ -282,16 +313,16 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
 
     def clear(self) -> None:
         self.inconsistencies = {"head": [], "tail": []}
-        self.consistency_cache = {}
 
     def finalize(self) -> InconsistentMetricResults:
         data = {}
+        metric_name = self.metric.value
         for side in ["head", "tail"]:
             if self.inconsistencies[side]:
-                inc_at_k = np.mean(self.inconsistencies[side])
+                value = np.mean(self.inconsistencies[side])
             else:
-                inc_at_k = 0.0
-            data[InconsistentMetricKey(side=side, metric="inc_at_k")] = inc_at_k
+                value = 0.0
+            data[InconsistentMetricKey(side=side, metric=metric_name)] = value
         self.clear()
         return InconsistentMetricResults(data)
     

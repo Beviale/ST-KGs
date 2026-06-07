@@ -62,5 +62,5 @@ else:
     raise Exception("Argument type value not valid!")
 
 np.save(os.path.join(args.output, f"scores_{args.type}.npy"), np.stack(all_scores))
-np.save(os.path.join(args.output, f"hrt_{args.type}.npy{args.type}"), np.array(hrt_list))
+np.save(os.path.join(args.output, f"hrt_{args.type}.npy"), np.array(hrt_list))
 print("DONE")

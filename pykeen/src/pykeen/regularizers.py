@@ -337,21 +337,28 @@ class OrthogonalityRegularizer(Regularizer):
 
 
 class AxiomRegularizer(Regularizer):
-    r"""Axiom-based regularizer over relation embeddings (TransOWL / TransE\ :sup:`R`).
+    r"""Axiom-based regularizer over an embedding matrix (relations or entities).
 
-    Injects background knowledge by constraining relation embeddings directly:
+    Injects background knowledge by constraining embeddings directly. It is generic
+    over the matrix it is attached to:
 
-    - ``inverseOf`` pairs ($r \equiv q^-$) are pushed towards opposite vectors,
-      penalizing $\lVert r + q\rVert$;
-    - ``equivalentProperty`` pairs ($r \equiv p$) are pushed towards equal vectors,
-      penalizing $\lVert r - p\rVert$.
-    - ``subPropertyOf`` pairs ($r \sqsubseteq p$) are pushed towards a directional
-      offset, penalizing $\lVert (r - p) - (1 - \beta)\rVert$ (Eq. 8, [damato2021]_).
+    - on the **relation** matrix: ``inverseOf`` (via ``inverse_pairs``),
+      ``equivalentProperty`` (via ``equivalence_pairs``), ``subPropertyOf``
+      (via ``subproperty_pairs``);
+    - on the **entity** matrix (classes are entities, objects of ``rdf:type``):
+      ``equivalentClass`` (via ``equivalence_pairs``), ``subClassOf``
+      (via ``subproperty_pairs``).
 
-    The pairs are given as relation indices (matching the
-    :class:`~pykeen.triples.TriplesFactory` ``relation_to_id`` mapping). The term is
-    computed over the *whole* relation embedding matrix, so this regularizer must be
-    registered via :meth:`~pykeen.models.ERModel.append_weight_regularizer`.
+    The constraints are:
+
+    - symmetric-equal pairs ($a \equiv b$) penalize $\lVert a - b\rVert$;
+    - inverse pairs ($a \equiv b^-$) penalize $\lVert a + b\rVert$;
+    - directional pairs ($a \sqsubseteq b$) penalize $\lVert (a - b) - (1 - \beta)\rVert$
+      (Eq. 8, [damato2021]_).
+
+    The pairs are given as indices into the matrix. The term is computed over the
+    *whole* matrix, so this regularizer must be registered via
+    :meth:`~pykeen.models.ERModel.append_weight_regularizer`.
     """
 
     #: inverseOf relation index pairs, shape: (num_inverse, 2)

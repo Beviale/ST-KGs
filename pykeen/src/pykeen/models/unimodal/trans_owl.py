@@ -53,9 +53,13 @@ class TransOWL(ERModel[FloatTensor, FloatTensor, FloatTensor]):
         inverse_relations: Iterable[tuple[int, int]] | None = None,
         equivalent_relations: Iterable[tuple[int, int]] | None = None,
         subproperty_relations: Iterable[tuple[int, int]] | None = None,
+        equivalent_classes: Iterable[tuple[int, int]] | None = None,
+        subclass_relations: Iterable[tuple[int, int]] | None = None,
         inverse_weight: float = 1.0,
         equivalence_weight: float = 1.0,
         subproperty_weight: float = 0.01,
+        equivalentclass_weight: float = 1.0,
+        subclass_weight: float = 0.01,
         beta: float = 0.9,
         regularizer_weight: float = 1.0,
         entity_initializer: Hint[Initializer] = xavier_uniform_,
@@ -81,12 +85,22 @@ class TransOWL(ERModel[FloatTensor, FloatTensor, FloatTensor]):
         :param subproperty_relations:
             relation index pairs $(r, p)$ such that $r \sqsubseteq p$ (``rdfs:subPropertyOf``);
             order matters ($r$ sub-property, $p$ super-property).
+        :param equivalent_classes:
+            entity index pairs $(C, D)$ such that $C \equiv D$ (``owl:equivalentClass``);
+            classes must be entities (objects of ``rdf:type``).
+        :param subclass_relations:
+            entity index pairs $(C, D)$ such that $C \sqsubseteq D$ (``rdfs:subClassOf``);
+            order matters ($C$ sub-class, $D$ super-class).
         :param inverse_weight:
             weight $\lambda_1$ for the inverseOf regularization term.
         :param equivalence_weight:
             weight $\lambda_2$ for the equivalentProperty regularization term.
         :param subproperty_weight:
             weight for the subPropertyOf regularization term.
+        :param equivalentclass_weight:
+            weight for the equivalentClass regularization term (on entity embeddings).
+        :param subclass_weight:
+            weight for the subClassOf regularization term (on entity embeddings).
         :param beta:
             directional offset of the subPropertyOf term; $\beta = 1$ reduces it to plain
             equality $\lVert r - p\rVert$.
@@ -145,3 +159,22 @@ class TransOWL(ERModel[FloatTensor, FloatTensor, FloatTensor]):
             regularizer=relation_regularizer,
             regularizer_kwargs=relation_regularizer_kwargs,
         )
+
+        # Class-level axiom regularization acts on the ENTITY embedding matrix
+        # (classes are entities, objects of rdf:type). Same formulas as the relation
+        # case: equivalentClass -> ||e_C - e_D||, subClassOf -> ||(e_C - e_D) - (1-beta)||.
+        # Only attached when class axioms are provided (datasets with rdf:type triples).
+        if equivalent_classes or subclass_relations:
+            self.append_weight_regularizer(
+                parameter=self.entity_representations[0].parameters(),
+                regularizer=AxiomRegularizer,
+                regularizer_kwargs={
+                    "equivalence_pairs": equivalent_classes,
+                    "subproperty_pairs": subclass_relations,
+                    "equivalence_weight": equivalentclass_weight,
+                    "subproperty_weight": subclass_weight,
+                    "beta": beta,
+                    "p": scoring_fct_norm,
+                    "weight": regularizer_weight,
+                },
+            )

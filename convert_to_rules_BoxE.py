@@ -25,17 +25,29 @@ def convert_owl_to_boxe(owl_filepath: str, kg, output_filepath: str):
         for super_prop in prop.is_a:
             if isinstance(super_prop, ObjectPropertyClass):
                 super_id = kg.obj_prop_to_id(super_prop.iri)
-                
+
                 if super_id is not None and super_id != -1 and super_id != prop_id:
                     rule = f"{prop_id}{ents} > {super_id}{ents}\n"
                     rules.append(rule)
+
+            elif isinstance(super_prop, Inverse):
+                # r is a sub-property of an inverse:  r ⊑ s⁻  ->  r[0,1] > s[1,0]
+                super_id = kg.obj_prop_to_id(super_prop.property.iri)
+                if super_id is not None and super_id != -1 and super_id != prop_id:
+                    rules.append(f"{prop_id}{ents} > {super_id}{ents_inv}\n")
 
         for eq_prop in prop.equivalent_to:
             if hasattr(eq_prop, 'iri'):
                 eq_id = kg.obj_prop_to_id(eq_prop.iri)
                 if eq_id is not None and eq_id != -1 and prop_id != eq_id:
                     rules.append(f"{prop_id}{ents} = {eq_id}{ents}\n")
-            
+
+            elif isinstance(eq_prop, Inverse):
+                # r is equivalent to an inverse:  r ≡ s⁻  ->  r[0,1] = s[1,0]
+                eq_id = kg.obj_prop_to_id(eq_prop.property.iri)
+                if eq_id is not None and eq_id != -1 and prop_id != eq_id:
+                    rules.append(f"{prop_id}{ents} = {eq_id}{ents_inv}\n")
+
             elif isinstance(eq_prop, And):
                 component_ids = [kg.obj_prop_to_id(p.iri) for p in eq_prop.Classes if kg.obj_prop_to_id(p.iri) is not None]
                 component_ids = [idx for idx in component_ids if idx != -1]

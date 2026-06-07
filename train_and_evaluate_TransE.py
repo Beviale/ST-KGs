@@ -133,15 +133,16 @@ def evaluate_inc_best_model_TransE(ontology_path: str, train_path:str, output_kg
     )
     for metric in metrics:
         print(f"------Metric={metric.name}------------------")
+        inc_evaluator = InconsistentEvaluator(ontology_path, train_path, output_kg_path, reasoner_path, entity_to_id_path, relation_to_id_path, metric, kg, 1, filtered=True)
         for k in [1, 3, 10]:
             print(f"-K={k}-")
-            inc_evaluator = InconsistentEvaluator(ontology_path, train_path, output_kg_path, reasoner_path, entity_to_id_path, relation_to_id_path, metric, kg, k, filtered=True)
+            inc_evaluator.k = k
             inc_results = inc_evaluator.evaluate(
                 model=best_model,
                 mapped_triples=test_tf.mapped_triples,
                 additional_filter_triples=[train_tf.mapped_triples, valid_tf.mapped_triples],
-                batch_size=16,  
-                slice_size=256,  
+                batch_size=16,
+                slice_size=256,
             )
             print(f"{metric.name}_{k}: {str(inc_results.data)}")
             with open(metrics_file_path, "a", encoding="utf-8") as f:

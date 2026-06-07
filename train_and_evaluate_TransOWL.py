@@ -18,9 +18,11 @@ def train_TransOWL(dataset_path, entity_mapping, relation_mapping, experiments,
     output_dir_path = Path(output_directory) / "TransOWL"
     os.makedirs(output_dir_path, exist_ok=True)
 
-    # Extract the axioms (inverseOf / equivalentProperty / subPropertyOf) from the ontology
-    inverse_pairs, equivalent_pairs, subproperty_pairs = convert_to_axioms_TransOWL.extract_axiom_pairs(
-        ontology_path, kg
+    # Extract relation + class axioms from the ontology. Passing entity_mapping enables
+    # class regularization automatically when classes are entities (rdf:type datasets).
+    (inverse_pairs, equivalent_pairs, subproperty_pairs,
+     equivalent_class_pairs, subclass_pairs) = convert_to_axioms_TransOWL.extract_axiom_pairs(
+        ontology_path, kg, entity_mapping
     )
 
     train_tf = TriplesFactory.from_path(
@@ -60,8 +62,11 @@ def train_TransOWL(dataset_path, entity_mapping, relation_mapping, experiments,
                     inverse_relations=inverse_pairs,
                     equivalent_relations=equivalent_pairs,
                     subproperty_relations=subproperty_pairs,
+                    equivalent_classes=equivalent_class_pairs,
+                    subclass_relations=subclass_pairs,
                     regularizer_weight=params["reg_weight"],
                     subproperty_weight=params["subprop_weight"],
+                    subclass_weight=params["subclass_weight"],
                     beta=params["beta"],
                 ),
                 optimizer='Adam',
@@ -112,7 +117,6 @@ def evaluate_inc_best_model_TransOWL(ontology_path, train_path, output_kg_path,
                                      reasoner_path, best_model_path, dataset_path,
                                      entity_to_id_path, relation_to_id_path,
                                      output_directory, kg, metrics):
-    # Identical to evaluate_inc_best_model_TransE: scoring/eval is the same as TransE
     print("---- Evaluating using inconsistency metrics ----")
     out_dir = Path(output_directory) / "TransOWL"
     os.makedirs(out_dir, exist_ok=True)
@@ -130,11 +134,12 @@ def evaluate_inc_best_model_TransOWL(ontology_path, train_path, output_kg_path,
                                        entity_to_id=entity_mapping, relation_to_id=relation_mapping)
     for metric in metrics:
         print(f"------Metric={metric.name}------------------")
+        inc_evaluator = InconsistentEvaluator(ontology_path, train_path, output_kg_path,
+                                              reasoner_path, entity_to_id_path,
+                                              relation_to_id_path, metric, kg, 1, filtered=True)
         for k in [1, 3, 10]:
             print(f"-K={k}-")
-            inc_evaluator = InconsistentEvaluator(ontology_path, train_path, output_kg_path,
-                                                  reasoner_path, entity_to_id_path,
-                                                  relation_to_id_path, metric, kg, k, filtered=True)
+            inc_evaluator.k = k
             inc_results = inc_evaluator.evaluate(
                 model=best_model,
                 mapped_triples=test_tf.mapped_triples,
