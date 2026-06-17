@@ -102,7 +102,8 @@ def train_TransE(dataset_path: str, entity_mapping, relation_mapping, experiment
         os.makedirs(best_dir, exist_ok=True)
         best_pipeline_result.save_to_directory(best_dir)
         print(f"\nBest model successfully saved in directory: '{output_directory}'")
-    return best_pipeline_result
+        return best_dir
+    return None
 
 
 

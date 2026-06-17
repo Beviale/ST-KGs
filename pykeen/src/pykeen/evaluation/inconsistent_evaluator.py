@@ -140,11 +140,11 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
                 self.inconsistencies[target].append(ac_at_k)
         elif self.metric == InconsistencyMetric.SEM_AT_K:
             for prediction in predictions:
-                inconsistent_for_triple = 0
+                consistent_for_triple = 0
                 for triple in prediction:
-                    if self._is_consistent_relation(target, triple) == False:
-                        inconsistent_for_triple += 1
-                inc_percentage = inconsistent_for_triple / self.k
+                    if self._is_consistent_relation(target, triple) == True:
+                        consistent_for_triple += 1
+                inc_percentage = consistent_for_triple / self.k
                 self.inconsistencies[target].append(inc_percentage)
         elif self.metric == InconsistencyMetric.AC_AT_K_2:
             for prediction in predictions:
@@ -191,7 +191,7 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
         return out
 
     def _is_consistent_relation(self, target, triple):
-        head = triple[0]
+        head = triple[0].item()
         relation = triple[1].item()
         tail = triple[2].item()
         if target == "head":
@@ -339,4 +339,3 @@ class InconsistentEvaluator(Evaluator[InconsistentMetricKey]):
         if prefix is None:
             return None
         return f"{prefix}:{local}"
-
