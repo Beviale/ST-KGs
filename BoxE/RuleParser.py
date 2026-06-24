@@ -179,9 +179,9 @@ def enforce_rule(rule, emb_low, emb_high):
         entailment_union = box_union_with_bottom(rhs.box_tensor_low, rhs.box_tensor_high,
                                                                      lhs.box_tensor_low, lhs.box_tensor_high)
         new_bx_l = tf.scatter_nd(rhs.indices, sanitize_scatter(entailment_union[0]), tf.shape(emb_low,
-                                                                                              out_type=tf.dtypes.int32))
+                                                                                              out_type=tf.dtypes.int64))
         new_bx_h = tf.scatter_nd(rhs.indices, sanitize_scatter(entailment_union[1]), tf.shape(emb_high,
-                                                                                              out_type=tf.dtypes.int32))
+                                                                                              out_type=tf.dtypes.int64))
 
     elif rtype == EQUIV:  
         if lhs.type == TERMINAL:  
