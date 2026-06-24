@@ -81,7 +81,7 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
         msgpack.pack(new_Rel2Id_dict, f)
 
     #Pre-processing
-    command = f"conda activate boxe && cd BoxE && python KBUtils.py"
+    command = f"cd BoxE && conda run -n boxe python KBUtils.py"
     result = subprocess.run(
         command,
         shell=True, 
@@ -118,9 +118,8 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
 
         if rules:
             command = (
-                f"conda activate boxe && "
                 f"cd BoxE && "
-                f"python Training.py {dataset_name} "
+                f"conda run -n boxe python Training.py {dataset_name} "
                 f"-validation True "
                 f"-validCkpt 5 "
                 f"-logFName \"{os.path.normpath(log_file_path_absolute)}\" "  
@@ -133,9 +132,8 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
             )
         else:
             command = (
-                f"conda activate boxe && "
                 f"cd BoxE && "
-                f"python Training.py {dataset_name} "
+                f"conda run -n boxe python Training.py {dataset_name} "
                 f"-validation True "
                 f"-validCkpt 5 "
                 f"-logFName \"{os.path.normpath(log_file_path_absolute)}\" "  
@@ -164,9 +162,8 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
 
         #------------------TESTING the current hyperparameter configuration using the eval set
         command = (
-            f"conda activate boxe && "
             f"cd BoxE && "
-            f"python Testing.py {dataset_name} rank "
+            f"conda run -n boxe python Testing.py {dataset_name} rank "
             f"-testFile Valid "
             f"-testSetting filtered"
         )
@@ -262,9 +259,8 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
     
     test_absolute_path = os.path.abspath(Path("BoxE") / "DatasetsMulti" / "testS.txt")
     command = (
-        f"conda activate boxe && "
         f"cd BoxE && "
-        f"python Testing.py {dataset_name} "
+        f"conda run -n boxe python Testing.py {dataset_name} "
         f"-verbosity False "
         f"rank "
         f"-testSetting filtered "
