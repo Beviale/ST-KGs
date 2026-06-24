@@ -142,7 +142,6 @@ def main():
 
     metrics = []
     if sem:
-        output_directory = output_directory + "_Sem"
         repeat = True
         while(repeat):
             metric_selected = None
@@ -221,7 +220,7 @@ def main():
         keys, values = zip(*grid_hyperparameters.items())
         experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
         #best_model_path = train_and_evaluate_TransE.train_TransE(dataset_path, entity_mapping, relation_mapping, experiments, output_directory)
-        best_model_path = Path(r"C:\Users\bevia\Documents\GitHub\ST-KGs\results_DBPEDIA_50K_C_ROFF\TransE\Best") 
+        #best_model_path = Path(r"C:\Users\bevia\Documents\GitHub\ST-KGs\results_DBPEDIA_50K_C_ROFF_SEM_TYPE\TransE\Best") 
         train_and_evaluate_TransE.evaluate_inc_best_model_TransE(ontology_path, train_path, output_kg_path, reasoner_path, best_model_path, dataset_path, entity_to_id_path, relation_to_id_path, output_directory, kg, metrics)
     elif model_selected == "BoxE":
         rules = False
@@ -230,24 +229,18 @@ def main():
             rules = True
             
 
-        #grid_hyperparameters = {
-            #"learningRate": [1e-3, 5e-4], 
-            #"loss_margin": [3.0, 6.0, 9.0], 
-            #"nbNegExp": [25, 50],  
-            #"reg_lambda": [0.05, 0.01, 0.005]
-        #}
         grid_hyperparameters = {
-            "learningRate": [1e-3], 
-            "loss_margin": [3.0], 
-            "nbNegExp": [25],  
-            "reg_lambda": [0.05]
+            "learningRate": [1e-3, 5e-4], 
+            "loss_margin": [6.0, 9.0], 
+            "nbNegExp": [100, 150],  
+            "reg_lambda": [0.05, 0]
         }
 
         keys, values = zip(*grid_hyperparameters.items())
         experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
         temp_dir = Path(output_directory) / "temp_scoring"
         best_weights_dir_path, best_params = train_and_evaluate_BoxE.train_BoxE(dataset_path, dataset_name, experiments, output_directory, ontology_path, kg, rules)
-        best_weights_dir_path = Path("BoxE") / f"weights_{dataset_name}"
+        #best_weights_dir_path = Path("BoxE") / f"weights_{dataset_name}"
         train_and_evaluate_BoxE.evaluate_inc_best_model_BoxE(ontology_path, train_path, output_kg_path, reasoner_path, best_weights_dir_path, dataset_name, output_directory, temp_dir, 64, entity_to_id_path, relation_to_id_path, kg, metrics)
     elif model_selected == "TransOWL":
         grid_hyperparameters = {

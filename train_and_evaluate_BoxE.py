@@ -24,8 +24,8 @@ import convert_to_rules_BoxE
 
 
 def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, ontology_path, kg, rules=False):
-    dataset_dir = Path("Boxe") / "Datasets" / dataset_name
-    dataset_dir_multi = Path("Boxe") / "DatasetsMulti" / dataset_name
+    dataset_dir = Path("BoxE") / "Datasets" / dataset_name
+    dataset_dir_multi = Path("BoxE") / "DatasetsMulti" / dataset_name
     dataset_dir.mkdir(parents=True, exist_ok=True)
     dataset_dir_multi.mkdir(parents=True, exist_ok=True)
     if rules:
@@ -81,7 +81,7 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
         msgpack.pack(new_Rel2Id_dict, f)
 
     #Pre-processing
-    command = f"conda activate boxe && cd Boxe && python KBUtils.py"
+    command = f"conda activate boxe && cd BoxE && python KBUtils.py"
     result = subprocess.run(
         command,
         shell=True, 
@@ -124,7 +124,7 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
                 f"-validation True "
                 f"-validCkpt 5 "
                 f"-logFName \"{os.path.normpath(log_file_path_absolute)}\" "  
-                f"-epochs 2 "
+                f"-epochs 1000 "
                 f"-nbNegExp {params['nbNegExp']} "
                 f"-lossMargin {params['loss_margin']} "
                 f"-regLambda {params['reg_lambda']} "
@@ -139,7 +139,7 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
                 f"-validation True "
                 f"-validCkpt 5 "
                 f"-logFName \"{os.path.normpath(log_file_path_absolute)}\" "  
-                f"-epochs 2 "
+                f"-epochs 1000 "
                 f"-nbNegExp {params['nbNegExp']} "
                 f"-lossMargin {params['loss_margin']} "
                 f"-regLambda {params['reg_lambda']} "

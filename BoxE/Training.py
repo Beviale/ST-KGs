@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"   # disabled: use the GPU if available
 import Cnst
 from ModelOptions import ModelOptions
 from BoxEModel import BoxEMulti
