@@ -61,6 +61,8 @@ def train_commandline():
     parser.add_argument("-printFreq", metavar='', type=int, default=50, help="Batch Interval between which to log")
     parser.add_argument("-validCkpt", metavar='', type=int, default=50, help="Epoch Gap between validation "
                         + "tests (if applicable)")
+    parser.add_argument("-patience", metavar='', type=int, default=0, help="Early stopping patience: stop after "
+                        + "this many validations without MRR improvement (0 = disabled)")
     parser.add_argument("-savePeriod", type=int, default=10000, metavar='',
                         help="If no early stopping, batch intervals at which weight saving is done")
     parser.add_argument("-epochs", type=int, default=100000, metavar='', help="Maximum Number of Epochs to run")
@@ -214,7 +216,7 @@ def train_commandline():
     model.train_with_valid(print_period=feedback_period, epoch_ckpt=epoch_checkpoint, num_epochs=num_epochs,
                            reset_weights=reset_weights, loss_file_name=loss_file_name, log_to_file=log_to_file,
                            log_file_name=log_file_name, save_period=save_period, separate_valid_model=sepValid,
-                           viz_mode=args.viz)
+                           viz_mode=args.viz, patience=args.patience)
 
 
 if __name__ == "__main__":

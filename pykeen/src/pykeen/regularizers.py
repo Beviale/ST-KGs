@@ -379,7 +379,6 @@ class AxiomRegularizer(Regularizer):
         subproperty_weight: float = 1.0,
         beta: float = 0.9,
         p: float = 2.0,
-        weight: float = 1.0,
         apply_only_once: bool = True,
         **kwargs,
     ):
@@ -404,14 +403,12 @@ class AxiomRegularizer(Regularizer):
             $\\lVert r - p\\rVert$ (i.e. a soft, symmetric constraint).
         :param p:
             the parameter $p$ of the $L_p$ norm.
-        :param weight:
-            the overall regularization weight.
         :param apply_only_once:
             the axiom constraints are computed once per batch over the full matrix.
         :param kwargs:
             additional keyword-based parameters passed to :meth:`Regularizer.__init__`.
         """
-        super().__init__(weight=weight, apply_only_once=apply_only_once, **kwargs)
+        super().__init__(weight=1.0, apply_only_once=apply_only_once, **kwargs)
         self.p = p
         self.inverse_weight = inverse_weight
         self.equivalence_weight = equivalence_weight

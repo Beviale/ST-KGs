@@ -954,7 +954,7 @@ class BoxEMulti:
 
     def train_with_valid(self, separate_valid_model=True, print_period=1, epoch_ckpt=50, save_period=1000,
                          num_epochs=1000, reset_weights=True, loss_file_name="losses", log_to_file=True,
-                         log_file_name="training_log.txt", viz_mode=False):
+                         log_file_name="training_log.txt", viz_mode=False, patience=0):
 
         if separate_valid_model:
             valid_model = self.set_up_valid_net()
@@ -996,6 +996,10 @@ class BoxEMulti:
                 self.sess.run(tf.global_variables_initializer())
                 self.sess.run(tf.tables_initializer())
         batch_total_count = 0
+        best_vl_mrr = -1.0
+        epochs_no_improve = 0
+        best_saved = False
+        best_param_directory = self.param_directory + "_best"
         try:
             if not os.path.exists('training_ckpts'):
                 os.mkdir('training_ckpts')
@@ -1127,6 +1131,21 @@ class BoxEMulti:
                                         self.valid_h_at_5: vl_hits_5, self.valid_h_at_10: vl_hits_10}
                         vl_loss_summary = self.sess.run(self.valid_summaries, feed_dict=vl_feed_dict)
                         self.summary_writer.add_summary(vl_loss_summary, epoch_index)
+                    if patience and patience > 0:
+                        if vl_mrr > best_vl_mrr:
+                            best_vl_mrr = vl_mrr
+                            epochs_no_improve = 0
+                            self.saver.save(self.sess, best_param_directory)
+                            best_saved = True
+                            print_or_log("New best validation MRR: " + str(vl_mrr), log_to_file, log_file_name)
+                        else:
+                            epochs_no_improve += 1
+                            print_or_log("No improvement " + str(epochs_no_improve) + "/" + str(patience),
+                                         log_to_file, log_file_name)
+                            if epochs_no_improve >= patience:
+                                print_or_log("Early stopping at epoch " + str(epoch_index) +
+                                             ". Best val MRR: " + str(best_vl_mrr), log_to_file, log_file_name)
+                                break
                     print_or_log("Saving Checkpoint Weights...", log_to_file, log_file_name)
                     self.saver.save(self.sess,
                                     "training_ckpts/" + self.kb_name + "_ep" + str(epoch_index) + "/values.ckpt")
@@ -1176,6 +1195,11 @@ class BoxEMulti:
 
         self.saver.save(self.sess, self.param_directory)
         print_or_log("Weights saved to " + str(self.param_directory), log_to_file, log_file_name)
+        if best_saved:
+            self.saver.restore(self.sess, best_param_directory)
+            self.saver.save(self.sess, self.param_directory)
+            print_or_log("Best weights (val MRR=" + str(best_vl_mrr) + ") restored to " +
+                         str(self.param_directory), log_to_file, log_file_name)
         if not self.use_tensorboard:
             with open(loss_file_name + ".ls", "wb") as f:
                 msgpack.dump(losses, f)

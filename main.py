@@ -13,7 +13,8 @@ import train_and_evaluate_TransOWL
 import shutil
 from pykeen.evaluation import InconsistencyMetric
 import random
-
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 def nt_to_tsv(input_path: str, output_path: str) -> None:
     """Convert a.nt file in a .tsv file."""
@@ -67,15 +68,27 @@ def create_tsv_files(dataset_path: str, force_tsv_creation: bool):
         if not Path.exists(valid_tsv_path):
             nt_to_tsv(valid_nt_path, valid_tsv_path)
 
-def select_dataset(base_path: str) -> str:
+def select_datasets(base_path: str) -> str:
     datasets = [f for f in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, f))]
+    dataset_paths = []
+    choices = []
+    print("DATASET SELECTION")
     
-    print("Select a dataset:")
-    for i, dataset in enumerate(datasets):
-        print(f"  {i+1}. {dataset}")
-    
-    choice = int(input("Select a dataset: ")) - 1
-    return Path(os.path.join(base_path, datasets[choice]))
+    while(True):
+        for i, dataset in enumerate(datasets):
+            print(f"  {i+1}. {dataset}")
+        choice = int(input("Select a dataset (0 to terminate insertion): "))
+        if choice == 0:
+            break
+        if choice > 0 and choice <= len(datasets):
+            print("OK!")
+        else:
+            print("ERROR! Repeat the insertion!")
+        choices.append(choice - 1)
+
+    for choice in choices:
+        dataset_paths.append(Path(os.path.join(base_path, datasets[choice])))
+    return dataset_paths
 
 RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 
@@ -118,7 +131,12 @@ def main():
             repeat = True
         else: 
             repeat = False
-    dataset_path = select_dataset("datasets")
+    dataset_paths = select_datasets("datasets")
+    for dataset_path in dataset_paths:
+        process_dataset(dataset_path, model_selected)
+
+
+def process_dataset(dataset_path, model_selected):
     dataset_name = os.path.basename(os.path.normpath(dataset_path))
     output_directory = f"results_{dataset_name}"
     os.makedirs(output_directory, exist_ok=True)
@@ -212,14 +230,14 @@ def main():
     reasoner_path = Path().absolute() / "reasoners"
     if model_selected == "TransE":
         grid_hyperparameters = {
-            "embedding_dim": [50, 100],     
-            "lr":            [1e-3, 5e-4], 
-            "margin":        [1.0, 2.0],
-            "num_negs":      [32, 64],
+            "embedding_dim": [50],     
+            "lr":            [1e-3], 
+            "margin":        [3.0],
+            "num_negs":      [32],
         }
         keys, values = zip(*grid_hyperparameters.items())
         experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
-        #best_model_path = train_and_evaluate_TransE.train_TransE(dataset_path, entity_mapping, relation_mapping, experiments, output_directory)
+        best_model_path = train_and_evaluate_TransE.train_TransE(dataset_path, entity_mapping, relation_mapping, experiments, output_directory)
         #best_model_path = Path(r"C:\Users\bevia\Documents\GitHub\ST-KGs\results_DBPEDIA_50K_C_ROFF_SEM_TYPE\TransE\Best") 
         train_and_evaluate_TransE.evaluate_inc_best_model_TransE(ontology_path, train_path, output_kg_path, reasoner_path, best_model_path, dataset_path, entity_to_id_path, relation_to_id_path, output_directory, kg, metrics)
     elif model_selected == "BoxE":
@@ -230,28 +248,30 @@ def main():
             
 
         grid_hyperparameters = {
-            "learningRate": [1e-3, 5e-4], 
-            "loss_margin": [6.0, 9.0], 
-            "nbNegExp": [100, 150],  
-            "reg_lambda": [0.05, 0]
+            "learningRate": [1e-3], 
+            "loss_margin": [4.0], 
+            "nbNegExp": [50],  
+            "reg_lambda": [0.01]
         }
 
         keys, values = zip(*grid_hyperparameters.items())
         experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
         temp_dir = Path(output_directory) / "temp_scoring"
         best_weights_dir_path, best_params = train_and_evaluate_BoxE.train_BoxE(dataset_path, dataset_name, experiments, output_directory, ontology_path, kg, rules)
-        #best_weights_dir_path = Path("BoxE") / f"weights_{dataset_name}"
-        train_and_evaluate_BoxE.evaluate_inc_best_model_BoxE(ontology_path, train_path, output_kg_path, reasoner_path, best_weights_dir_path, dataset_name, output_directory, temp_dir, 64, entity_to_id_path, relation_to_id_path, kg, metrics)
+        #best_weights_dir_path = Path("BoxE") / f"weights_{dataset_name}" / "neg50_margin4.0_reg0.01_lr0.001_BEST"
+        train_and_evaluate_BoxE.evaluate_inc_best_model_BoxE(ontology_path, train_path, output_kg_path, reasoner_path, best_weights_dir_path, dataset_name, output_directory, temp_dir, 64, entity_to_id_path, relation_to_id_path, kg, metrics, rules)
     elif model_selected == "TransOWL":
         grid_hyperparameters = {
-            "embedding_dim": [50, 100],
-            "lr":            [1e-3, 5e-4],
-            "margin":        [1.0, 2.0],
-            "num_negs":      [32, 64],
-            "reg_weight":    [1.0, 0.1],   # weight lambda of the axiom-based regularization
-            "subprop_weight":[0.01],       # weight of the subPropertyOf term
-            "subclass_weight":[0.01],      # weight of the subClassOf term (only on *_TYPE datasets)
-            "beta":          [0.9],        # directional offset (1 - beta); beta=1 -> Option A
+            "embedding_dim": [50],     
+            "lr":            [1e-3], 
+            "margin":        [3.0],
+            "num_negs":      [32],
+            "inverse_weight":        [0.1, 1],    # peso termine inverseOf
+            "equivalence_weight":    [0.1, 1],    # peso termine equivalentProperty
+            "subprop_weight":        [0.1, 1],    # peso termine subPropertyOf
+            "equivalentclass_weight":[0.1, 1],    # peso termine equivalentClass (solo dataset *_TYPE)
+            "subclass_weight":       [0.1, 1],    # peso termine subClassOf (solo dataset *_TYPE)
+            "beta":          [0.9],          # offset direzionale (1 - beta); beta=1 -> uguaglianza pura
         }
         keys, values = zip(*grid_hyperparameters.items())
         experiments = [dict(zip(keys, v)) for v in itertools.product(*values)]
@@ -266,8 +286,5 @@ def main():
             output_directory, kg, metrics
         )
 
-
 if __name__ == "__main__":
     main()
-
-

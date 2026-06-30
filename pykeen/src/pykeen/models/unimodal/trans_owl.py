@@ -61,7 +61,6 @@ class TransOWL(ERModel[FloatTensor, FloatTensor, FloatTensor]):
         equivalentclass_weight: float = 1.0,
         subclass_weight: float = 0.01,
         beta: float = 0.9,
-        regularizer_weight: float = 1.0,
         entity_initializer: Hint[Initializer] = xavier_uniform_,
         entity_constrainer: Hint[Constrainer] = functional.normalize,
         relation_initializer: Hint[Initializer] = xavier_uniform_norm_,
@@ -104,8 +103,6 @@ class TransOWL(ERModel[FloatTensor, FloatTensor, FloatTensor]):
         :param beta:
             directional offset of the subPropertyOf term; $\beta = 1$ reduces it to plain
             equality $\lVert r - p\rVert$.
-        :param regularizer_weight:
-            the overall axiom regularization weight $\lambda$.
 
         :param entity_initializer: Entity initializer. Defaults to :func:`pykeen.nn.init.xavier_uniform_`.
         :param entity_constrainer: Entity constrainer. Defaults to :func:`torch.nn.functional.normalize`.
@@ -152,7 +149,6 @@ class TransOWL(ERModel[FloatTensor, FloatTensor, FloatTensor]):
                 "subproperty_weight": subproperty_weight,
                 "beta": beta,
                 "p": scoring_fct_norm,
-                "weight": regularizer_weight,
             }
         self.append_weight_regularizer(
             parameter=self.relation_representations[0].parameters(),
@@ -175,6 +171,5 @@ class TransOWL(ERModel[FloatTensor, FloatTensor, FloatTensor]):
                     "subproperty_weight": subclass_weight,
                     "beta": beta,
                     "p": scoring_fct_norm,
-                    "weight": regularizer_weight,
                 },
             )

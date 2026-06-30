@@ -1,17 +1,24 @@
-"""Create dataset variants from a base dataset.
+"""Generate Sem@K and rdf:type dataset variants from a base knowledge-graph dataset.
 
-Variants (same base name + explanatory suffix):
-  _NOSEM        : no Sem@K filter, no rdf:type triples
-  _NO_SEM_TYPE  : no Sem@K filter, with rdf:type triples (train only)
-  _SEM          : Sem@K filter, no rdf:type triples
-  _SEM_TYPE     : Sem@K filter, with rdf:type triples (train only)
+The base dataset's train/test/validation splits (read from ``abox/splits/*.nt``) are
+first mirrored to ``.tsv`` in place, then four self-contained variants are written next
+to the base directory, each with its own rebuilt id mappings:
 
-Sem@K filter keeps a triple (h, r, t) iff h and t have at least one class AND
-r has both a domain and a range. The *_TYPE variants add (individual, rdf:type, class)
-triples to the TRAIN split for every asserted class of the individuals present.
-Each variant is self-contained with rebuilt id mappings (new indices).
+    _NOSEM         no Sem@K filter, no rdf:type triples
+    _NO_SEM_TYPE   no Sem@K filter, rdf:type triples added to the train split only
+    _SEM           Sem@K filter applied, no rdf:type triples
+    _SEM_TYPE      Sem@K filter applied, rdf:type triples added to the train split only
 
-Usage:  python make_dataset_variants.py datasets/DBPEDIA_50K_C_RON
+The Sem@K filter keeps a triple (h, r, t) only when both h and t have at least one
+asserted class and r declares both a domain and a range; the surviving triples are
+shuffled and re-split 80/10/10. The *_TYPE variants additionally materialise
+(individual, rdf:type, class) triples in the train split for every asserted class of
+the individuals occurring in the dataset.
+
+Usage:
+    python make_dataset_variants.py [<base_dataset_dir>]
+
+If no directory is given, a built-in default dataset is used.
 """
 
 import json
@@ -26,7 +33,7 @@ from jdex.loaders.torch import KnowledgeGraph
 RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 SEED = 42
 
-DEFAULT_DATASET = Path(__file__).resolve().parent / "datasets" / "DBPEDIA_50K_C_ROFF"
+DEFAULT_DATASET = Path(__file__).resolve().parent / "datasets" / "ARCO_20_ROFF"
 
 
 def read_nt(path):
@@ -119,7 +126,7 @@ def build_mappings(splits):
 def write_variant(base, out, splits, ent2id, rel2id):
     if out.exists():
         shutil.rmtree(out)
-    shutil.copytree(base, out)                       # copy ontology, tbox, rbox, class_assertions, ...
+    shutil.copytree(base, out)
     for stale in out.glob("ont_train_graph.owl*"):
         stale.unlink()
     sp = out / "abox" / "splits"
@@ -149,11 +156,17 @@ def main():
     name = base.name
     parent = base.parent
 
+    plain = make_plain_splits(base)
+
+    sp_base = base / "abox" / "splits"
+    for s, tr in plain.items():
+        write_tsv(sp_base / f"{s}.tsv", tr)
+    print(f"Converted base splits to .tsv: {base.name}")
+
     kg = KnowledgeGraph(path=base)
     ca_path = base / "abox" / "class_assertions.json"
     class_assertions = json.load(open(ca_path, encoding="utf-8")) if ca_path.exists() else {}
 
-    plain = make_plain_splits(base)
     sem = make_sem_splits(base, kg)
 
     variants = {

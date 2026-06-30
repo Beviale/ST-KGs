@@ -21,7 +21,6 @@ args = parser.parse_args()
 options = ModelOptions()
 options.embedding_dim = args.embedding_dim
 options.use_bumps = True
-options.nb_neg_examples_per_pos = 0
 
 model = BoxEMulti(args.dataset, options)
 model.load_params(param_loc=args.weights)

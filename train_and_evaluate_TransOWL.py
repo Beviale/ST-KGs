@@ -18,12 +18,35 @@ def train_TransOWL(dataset_path, entity_mapping, relation_mapping, experiments,
     output_dir_path = Path(output_directory) / "TransOWL"
     os.makedirs(output_dir_path, exist_ok=True)
 
-    # Extract relation + class axioms from the ontology. Passing entity_mapping enables
-    # class regularization automatically when classes are entities (rdf:type datasets).
     (inverse_pairs, equivalent_pairs, subproperty_pairs,
      equivalent_class_pairs, subclass_pairs) = convert_to_axioms_TransOWL.extract_axiom_pairs(
         ontology_path, kg, entity_mapping
     )
+
+    # Ignora i pesi degli assiomi assenti: se un tipo di assioma non ha coppie, il suo
+    # peso non ha effetto -> lo fisso a 1 e deduplico le combinazioni, per non sprecare run.
+    axiom_param_pairs = {
+        "inverse_weight": inverse_pairs,
+        "equivalence_weight": equivalent_pairs,
+        "subprop_weight": subproperty_pairs,
+        "equivalentclass_weight": equivalent_class_pairs,
+        "subclass_weight": subclass_pairs,
+    }
+    absent = [w for w, pairs in axiom_param_pairs.items() if not pairs]
+    if absent:
+        for exp in experiments:
+            for w in absent:
+                if w in exp:
+                    exp[w] = 1
+        seen, deduped = set(), []
+        for exp in experiments:
+            key = tuple(sorted(exp.items()))
+            if key not in seen:
+                seen.add(key)
+                deduped.append(exp)
+        print(f"Assiomi assenti {absent}: pesi relativi ignorati. "
+              f"Combinazioni ridotte da {len(experiments)} a {len(deduped)}.")
+        experiments = deduped
 
     train_tf = TriplesFactory.from_path(
         dataset_path / "abox" / "splits" / "train.tsv",
@@ -48,7 +71,10 @@ def train_TransOWL(dataset_path, entity_mapping, relation_mapping, experiments,
         try:
             log_file_path = Path(output_dir_path) / (
                 f"dim{params['embedding_dim']}_lr{params['lr']}_margin{params['margin']}"
-                f"_numNegs{params['num_negs']}_reg{params['reg_weight']}.txt"
+                f"_numNegs{params['num_negs']}"
+                f"_inv{params['inverse_weight']}_eq{params['equivalence_weight']}"
+                f"_sub{params['subprop_weight']}_eqc{params['equivalentclass_weight']}"
+                f"_subc{params['subclass_weight']}_beta{params['beta']}.txt"
             )
             result = pipeline(
                 training=train_tf,
@@ -64,8 +90,10 @@ def train_TransOWL(dataset_path, entity_mapping, relation_mapping, experiments,
                     subproperty_relations=subproperty_pairs,
                     equivalent_classes=equivalent_class_pairs,
                     subclass_relations=subclass_pairs,
-                    regularizer_weight=params["reg_weight"],
+                    inverse_weight=params["inverse_weight"],
+                    equivalence_weight=params["equivalence_weight"],
                     subproperty_weight=params["subprop_weight"],
+                    equivalentclass_weight=params["equivalentclass_weight"],
                     subclass_weight=params["subclass_weight"],
                     beta=params["beta"],
                 ),

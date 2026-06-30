@@ -22,6 +22,9 @@ import torch
 import msgpack
 import convert_to_rules_BoxE
 
+CONDA = os.environ.get("CONDA_EXE", "conda")
+BOXE_PY = os.path.join(os.path.dirname(os.path.dirname(CONDA)), "envs", "boxe", "bin", "python")
+
 
 def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, ontology_path, kg, rules=False):
     dataset_dir = Path("BoxE") / "Datasets" / dataset_name
@@ -81,7 +84,7 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
         msgpack.pack(new_Rel2Id_dict, f)
 
     #Pre-processing
-    command = f"cd BoxE && conda run -n boxe python KBUtils.py"
+    command = f"cd BoxE && {CONDA} run -n boxe {BOXE_PY} KBUtils.py"
     result = subprocess.run(
         command,
         shell=True, 
@@ -104,7 +107,7 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
         print(f"\n--- Experiment {i+1}/{len(experiments)} ---")
         print(f"Current hyparameter values: {params}")
         param_str_log = f"neg{params['nbNegExp']}_margin{params['loss_margin']}_reg{params['reg_lambda']}_lr{params['learningRate']}"
-        boxe_path =  Path(output_dir) / "BoxE"
+        boxe_path =  Path(output_dir) / ("BoxE_Rules" if rules else "BoxE")
         os.makedirs(boxe_path, exist_ok=True)
         dir_log_path = boxe_path / param_str_log
         os.makedirs(dir_log_path, exist_ok=True)
@@ -119,11 +122,13 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
         if rules:
             command = (
                 f"cd BoxE && "
-                f"conda run -n boxe python Training.py {dataset_name} "
+                f"{CONDA} run -n boxe {BOXE_PY} Training.py {dataset_name} "
                 f"-validation True "
-                f"-validCkpt 5 "
+                f"-validCkpt 10 "
                 f"-logFName \"{os.path.normpath(log_file_path_absolute)}\" "  
                 f"-epochs 1000 "
+                f"-patience 3 "
+                f"-batchSize 8192 "
                 f"-nbNegExp {params['nbNegExp']} "
                 f"-lossMargin {params['loss_margin']} "
                 f"-regLambda {params['reg_lambda']} "
@@ -133,11 +138,13 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
         else:
             command = (
                 f"cd BoxE && "
-                f"conda run -n boxe python Training.py {dataset_name} "
+                f"{CONDA} run -n boxe {BOXE_PY} Training.py {dataset_name} "
                 f"-validation True "
-                f"-validCkpt 5 "
+                f"-validCkpt 10 "
                 f"-logFName \"{os.path.normpath(log_file_path_absolute)}\" "  
-                f"-epochs 1000 "
+                f"-epochs 400 "
+                f"-patience 3 "
+                f"-batchSize 8192 "
                 f"-nbNegExp {params['nbNegExp']} "
                 f"-lossMargin {params['loss_margin']} "
                 f"-regLambda {params['reg_lambda']} "
@@ -163,7 +170,7 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
         #------------------TESTING the current hyperparameter configuration using the eval set
         command = (
             f"cd BoxE && "
-            f"conda run -n boxe python Testing.py {dataset_name} rank "
+            f"{CONDA} run -n boxe {BOXE_PY} Testing.py {dataset_name} rank "
             f"-testFile Valid "
             f"-testSetting filtered"
         )
@@ -197,7 +204,7 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
         specific_weights_path = os.path.join(weights_path, param_str_log)
         os.makedirs(specific_weights_path, exist_ok=True)
         for item in weights_path.iterdir():
-            if item == specific_weights_path:
+            if str(item) == str(specific_weights_path):
                 continue    
             try:
                 if os.path.exists(os.path.join(specific_weights_path, os.path.basename(item))):
@@ -260,7 +267,7 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
     test_absolute_path = os.path.abspath(Path("BoxE") / "DatasetsMulti" / "testS.txt")
     command = (
         f"cd BoxE && "
-        f"conda run -n boxe python Testing.py {dataset_name} "
+        f"{CONDA} run -n boxe {BOXE_PY} Testing.py {dataset_name} "
         f"-verbosity False "
         f"rank "
         f"-testSetting filtered "
@@ -302,18 +309,67 @@ def train_BoxE(dataset_path: str, dataset_name: str, experiments, output_dir, on
     return best_result_weights_path, best_params
 
 
+def _filter_known_scores(scores: torch.Tensor, hrt: torch.Tensor, gold_col: int, known: dict) -> None:
+    """Replica il setting 'filtered' di pykeen su score calcolati esternamente.
 
-def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_path: str, reasoner_path: str,  best_result_weights_path: str, dataset_name: str, output_directory: str, temp_dir:str, embedding_dim: int, entity_to_id_path, relation_to_id_path, kg, metrics: list[InconsistencyMetric]):
+    Mette a -inf lo score di ogni entita' che forma una tripla gia' nota
+    (train+valid+test), tranne la gold valutata su ciascuna riga. Cosi' il top-K
+    di BoxE compete solo contro entita' non-vere, esattamente come pykeen fa per
+    TransE via additional_filter_triples. Modifica `scores` in-place.
+
+    Tail prediction: gold_col=2, chiave=(head, rel). Head: gold_col=0, chiave=(rel, tail).
+    """
+    num_cols = scores.shape[1]
+    for i in range(hrt.shape[0]):
+        h, r, t = int(hrt[i, 0]), int(hrt[i, 1]), int(hrt[i, 2])
+        gold = int(hrt[i, gold_col])
+        key = (h, r) if gold_col == 2 else (r, t)
+        for e in known.get(key, ()):
+            if e != gold and e < num_cols:
+                scores[i, e] = float("-inf")
+
+
+def _build_known_triple_maps(dataset_name, entity_to_id_path, relation_to_id_path):
+    """Costruisce le mappe delle triple note (train+valid+test) nello spazio-ID jdex,
+    leggendo gli stessi .txt usati per generare test.kb (h\\tr\\tt)."""
+    from collections import defaultdict
+    with open(entity_to_id_path, "r", encoding="utf-8") as f:
+        ent_map = json.load(f)
+    with open(relation_to_id_path, "r", encoding="utf-8") as f:
+        rel_map = json.load(f)
+    hr_to_tails = defaultdict(set)
+    rt_to_heads = defaultdict(set)
+    boxe_ds_dir = Path("BoxE") / "Datasets" / dataset_name
+    for split in ("train.txt", "valid.txt", "test.txt"):
+        split_path = boxe_ds_dir / split
+        if not split_path.exists():
+            print(f"[FILTER] ATTENZIONE: {split_path} non trovato, filtraggio parziale.")
+            continue
+        with open(split_path, "r", encoding="utf-8") as f:
+            for line in f:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) < 3:
+                    continue
+                h, rel, t = parts[0], parts[1], parts[2]
+                if h in ent_map and rel in rel_map and t in ent_map:
+                    hi, ri, ti = ent_map[h], rel_map[rel], ent_map[t]
+                    hr_to_tails[(hi, ri)].add(ti)
+                    rt_to_heads[(ri, ti)].add(hi)
+    return hr_to_tails, rt_to_heads
+
+
+def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_path: str, reasoner_path: str,  best_result_weights_path: str, dataset_name: str, output_directory: str, temp_dir:str, embedding_dim: int, entity_to_id_path, relation_to_id_path, kg, metrics: list[InconsistencyMetric], rules: bool = False):
     print("---- Evaluating using inconsistency metrics ----")
-    boxE_outputDir = Path(output_directory) / "BoxE"
+    boxE_outputDir = Path(output_directory) / ("BoxE_Rules" if rules else "BoxE")
     os.makedirs(boxE_outputDir, exist_ok=True)
     metrics_file_path = os.path.join(boxE_outputDir, "Inconsistent_Metrics.txt")
     os.makedirs(output_directory, exist_ok=True)
+    os.makedirs(temp_dir, exist_ok=True)
 
     result = subprocess.run(
         [
-            "conda", "run", "-n", "boxe",
-            "python", "run_boxe_scoring.py",
+            CONDA, "run", "-n", "boxe",
+            BOXE_PY, "run_boxe_scoring.py",
             "--dataset", dataset_name,
             "--weights", os.path.normpath(os.path.abspath(os.path.join(best_result_weights_path, "values.ckpt"))),
             "--embedding_dim", str(embedding_dim),
@@ -336,8 +392,8 @@ def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_p
 
     result = subprocess.run(
         [
-            "conda", "run", "-n", "boxe",
-            "python", "run_boxe_scoring.py",
+            CONDA, "run", "-n", "boxe",
+            BOXE_PY, "run_boxe_scoring.py",
             "--dataset", dataset_name,
             "--weights", os.path.normpath(os.path.abspath(os.path.join(best_result_weights_path, "values.ckpt"))),
             "--embedding_dim", str(embedding_dim),
@@ -356,6 +412,16 @@ def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_p
     hrt_np_head = np.load(os.path.join(temp_dir, "hrt_head.npy"))
     scores_tensor_head = torch.tensor(scores_np_head, dtype=torch.float32)
     hrt_tensor_head = torch.tensor(hrt_np_head, dtype=torch.long)
+
+    # --- Filtering coerente con la valutazione di TransE (setting "filtered") ---
+    # pykeen, per TransE, azzera (-inf) le entita' delle triple gia' note prima del top-K
+    # (additional_filter_triples=[train, valid] + il filtro interno su test). Qui replichiamo
+    # lo stesso comportamento sugli score grezzi di BoxE, altrimenti il confronto e' sbilanciato.
+    hr_to_tails, rt_to_heads = _build_known_triple_maps(dataset_name, entity_to_id_path, relation_to_id_path)
+    _filter_known_scores(scores_tensor_tail, hrt_tensor_tail, 2, hr_to_tails)
+    _filter_known_scores(scores_tensor_head, hrt_tensor_head, 0, rt_to_heads)
+    print(f"[FILTER] filtering applicato (filtered=True) su {hrt_tensor_tail.shape[0]} triple di test")
+
     for metric in metrics:
         print(f"------Metric={metric}------------------")
         for k in [1, 3, 10]:
@@ -375,5 +441,3 @@ def evaluate_inc_best_model_BoxE(ontology_path: str, train_path:str, output_kg_p
             print(f"{metric.name}_{k}: {str(inc_results.data)}")
             with open(metrics_file_path, "a", encoding="utf-8") as f:
                 f.write(f"{metric.name}_{k}: {str(inc_results.data)}\n")
-
-
